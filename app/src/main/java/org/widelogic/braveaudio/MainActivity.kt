@@ -61,6 +61,7 @@ private enum class Tab(val label: String) {
     Library("Library"), Playlists("Playlists"), Player("Player"), Eq("EQ"), Settings("Settings")
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BraveAudioUi(vm: MainViewModel) {
     var tab by remember { mutableStateOf(Tab.Library) }

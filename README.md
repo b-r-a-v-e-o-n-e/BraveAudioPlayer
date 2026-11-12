@@ -63,3 +63,7 @@ APK:
 `org.widelogic.braveaudio`
 
 Change `applicationId` and `namespace` in `app/build.gradle.kts` if needed.
+
+## v1.0.3 dependency fix
+
+Uses Activity Compose 1.12.4 and Lifecycle 2.10.0 instead of unresolved versions. Retains the v1.0.2 self-contained Android SDK GitHub Actions workflow. Build needs confirmation in GitHub Actions.
