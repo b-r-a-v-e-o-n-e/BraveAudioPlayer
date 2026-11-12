@@ -67,3 +67,11 @@ Change `applicationId` and `namespace` in `app/build.gradle.kts` if needed.
 ## v1.0.3 dependency fix
 
 Uses Activity Compose 1.12.4 and Lifecycle 2.10.0 instead of unresolved versions. Retains the v1.0.2 self-contained Android SDK GitHub Actions workflow. Build needs confirmation in GitHub Actions.
+
+
+## v1.0.4 build compatibility fix
+
+Pins Compose BOM to 2025.09.01, AndroidX Core to 1.17.0, Activity to 1.11.0,
+and Lifecycle to 2.9.4, to avoid Android API 37 / AGP 9.1 requirements.
+Build configuration stays at Android API 36 and AGP 8.13.2.
+The project has not yet been verified by a successful CI build.
