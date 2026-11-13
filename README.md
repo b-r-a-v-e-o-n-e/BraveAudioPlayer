@@ -80,3 +80,8 @@ The project archive is generated and statically checked, but **no complete Gradl
 - Reduced main circular Play button / art ring approximately 30% (236dp -> 165dp).
 - Analyzer capture starts and stops with the Player screen; optional microphone/audio-capture permission button is shown there.
 - The Equalizer screen now focuses on EQ bands and presets only.
+  
+## ☕ Support Me
+If you find this project helpful, you can buy me a coffee!
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-☕-yellow.svg)](https://buymeacoffee.com/kristodigiorgio)
