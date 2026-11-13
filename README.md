@@ -1,3 +1,8 @@
+## ☕ Support Me
+If you find this project helpful, you can buy me a coffee!
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-☕-yellow.svg)](https://buymeacoffee.com/kristodigiorgio)
+
 ## Playlist editor v1.3.1
 
 - Create a playlist in **Library → Playlists → New playlist**; the new playlist opens automatically.
