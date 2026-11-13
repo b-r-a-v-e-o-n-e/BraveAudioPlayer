@@ -1,12 +1,14 @@
 package org.widelogic.braveaudio.playback
 
 import android.content.Context
+import android.util.Log
 import android.media.audiofx.Equalizer
 import android.media.audiofx.Visualizer
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +16,9 @@ import kotlin.math.abs
 
 object PlaybackHolder {
     @Volatile private var playerInternal: ExoPlayer? = null
+    private var errorRetries = 0
+    private val _errorMessage = MutableStateFlow("")
+    val errorMessage: StateFlow<String> = _errorMessage
     val player: ExoPlayer get() = requireNotNull(playerInternal) { "PlaybackHolder not initialized" }
 
     fun init(context: Context): ExoPlayer {
@@ -27,6 +32,27 @@ object PlaybackHolder {
                     true
                 )
                 p.playWhenReady = false
+                p.repeatMode = Player.REPEAT_MODE_OFF
+                p.addListener(object : Player.Listener {
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        errorRetries = 0
+                        _errorMessage.value = ""
+                    }
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        _errorMessage.value = "Playback error: ${error.errorCodeName}"
+                        // Only one retry: unsupported/corrupt tracks should never trigger an infinite loop.
+                        if (errorRetries++ == 0 && p.mediaItemCount > 0) {
+                            p.prepare()
+                            p.playWhenReady = true
+                        }
+                    }
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_READY) {
+                            errorRetries = 0
+                            _errorMessage.value = ""
+                        }
+                    }
+                })
                 playerInternal = p
             }
         }
@@ -35,14 +61,37 @@ object PlaybackHolder {
     fun mediaItem(uri: String, title: String, artist: String = "") =
         MediaItem.Builder()
             .setUri(uri)
-            .setMediaMetadata(
-                MediaMetadata.Builder().setTitle(title).setArtist(artist).build()
-            )
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setArtist(artist).build())
             .build()
+
+    fun togglePlaybackSafely(player: Player) {
+        when {
+            player.mediaItemCount <= 0 -> Unit
+            player.playerError != null -> {
+                errorRetries = 0
+                _errorMessage.value = ""
+                player.prepare()
+                player.playWhenReady = true
+            }
+            player.playbackState == Player.STATE_ENDED -> {
+                val index = player.currentMediaItemIndex.coerceAtLeast(0)
+                player.seekTo(index, 0L)
+                player.prepare()
+                player.playWhenReady = true
+            }
+            player.playWhenReady -> player.pause()
+            else -> {
+                if (player.playbackState == Player.STATE_IDLE) player.prepare()
+                player.play()
+            }
+        }
+    }
 
     fun release() {
         playerInternal?.release()
         playerInternal = null
+        errorRetries = 0
+        _errorMessage.value = ""
     }
 }
 
@@ -100,7 +149,7 @@ class EqualizerController(private val player: ExoPlayer) {
 
 class AudioVisualizer(private val player: ExoPlayer) {
     private var visualizer: Visualizer? = null
-    private val _fft = MutableStateFlow(FloatArray(32))
+    private val _fft = MutableStateFlow(FloatArray(96))
     val fft: StateFlow<FloatArray> = _fft
 
     fun start() {
@@ -109,13 +158,13 @@ class AudioVisualizer(private val player: ExoPlayer) {
         if (sessionId == C.AUDIO_SESSION_ID_UNSET) return
         visualizer = runCatching {
             Visualizer(sessionId).apply {
-                captureSize = Visualizer.getCaptureSizeRange()[0].coerceAtLeast(128)
+                captureSize = Visualizer.getCaptureSizeRange()[1].coerceAtMost(512)
                 setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
                     override fun onWaveFormDataCapture(v: Visualizer?, waveform: ByteArray?, samplingRate: Int) = Unit
                     override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, samplingRate: Int) {
                         if (fft == null || fft.size < 4) return
-                        val bins = FloatArray(32)
-                        val usable = minOf(32, fft.size / 2 - 1)
+                        val bins = FloatArray(96)
+                        val usable = minOf(96, fft.size / 2 - 1)
                         for (i in 0 until usable) {
                             val re = fft[2 * i + 2].toInt()
                             val im = fft[2 * i + 3].toInt()
@@ -133,7 +182,7 @@ class AudioVisualizer(private val player: ExoPlayer) {
         runCatching { visualizer?.enabled = false }
         runCatching { visualizer?.release() }
         visualizer = null
-        _fft.value = FloatArray(32)
+        _fft.value = FloatArray(96)
     }
 }
 

@@ -5,8 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.Player
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import org.widelogic.braveaudio.data.*
 import org.widelogic.braveaudio.playback.PlaybackHolder
@@ -15,13 +16,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val db = (app as BraveAudioApp).database
     private val dao = db.dao()
     private val scanner = LibraryScanner(app)
+    private val exchange = PlaylistExchange(app, dao)
+
+    private val _exchangeMessage = MutableStateFlow("")
+    val exchangeMessage: StateFlow<String> = _exchangeMessage
 
     val tracks = dao.observeTracks().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val playlists = dao.observePlaylists().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val prefs = app.getSharedPreferences("brave_audio", 0)
-    private val _darkTheme = MutableStateFlow(prefs.getBoolean("dark", true))
-    val darkTheme: StateFlow<Boolean> = _darkTheme
+
+    private val _themeKey = MutableStateFlow(prefs.getString("themeKey", "ocean_dark") ?: "ocean_dark")
+    val themeKey: StateFlow<String> = _themeKey
+    fun setThemeKey(key: String) {
+        _themeKey.value = key
+        prefs.edit().putString("themeKey", key).apply()
+    }
 
     private val _favorites = MutableStateFlow(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
     val favorites: StateFlow<Set<String>> = _favorites
@@ -43,18 +53,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _folderUri = MutableStateFlow(prefs.getString("folderUri", null))
     val folderUri: StateFlow<String?> = _folderUri
 
-    fun setTheme(dark: Boolean) {
-        _darkTheme.value = dark
-        prefs.edit().putBoolean("dark", dark).apply()
-    }
-
     fun selectFolder(uri: Uri) {
         val ctx = getApplication<Application>()
         runCatching {
-            ctx.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+            ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         _folderUri.value = uri.toString()
         prefs.edit().putString("folderUri", uri.toString()).apply()
@@ -70,11 +72,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _scanning.value = true
             try {
                 val found = scanner.scanTree(Uri.parse(value))
-                if (found.isNotEmpty()) {
-                    dao.deleteFolderTracks(value)
-                    dao.upsertTracks(found)
-                }
-            } finally { _scanning.value = false }
+                dao.deleteFolderTracks(value)
+                if (found.isNotEmpty()) dao.upsertTracks(found)
+            } finally {
+                _scanning.value = false
+            }
         }
     }
 
@@ -105,10 +107,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val p = PlaybackHolder.init(getApplication())
         val items = queue.map { PlaybackHolder.mediaItem(it.uri, it.title, it.artist) }
         val index = queue.indexOfFirst { it.uri == track.uri }.coerceAtLeast(0)
+        p.stop()
         p.setMediaItems(items, index, 0L)
         p.prepare()
         p.playWhenReady = true
     }
+
+    fun importPlaylist(uri: Uri) = viewModelScope.launch {
+        _exchangeMessage.value = "Importing playlist…"
+        _exchangeMessage.value = runCatching {
+            val (matched, total) = withContext(Dispatchers.IO) { exchange.importM3u(uri) }
+            "Playlist imported: $matched of $total tracks matched"
+        }.getOrElse { "Import failed: ${it.message ?: "Unknown error"}" }
+    }
+
+    fun exportPlaylist(id: Long, uri: Uri) = viewModelScope.launch {
+        _exchangeMessage.value = runCatching {
+            val count = withContext(Dispatchers.IO) { exchange.exportM3u(id, uri) }
+            "Exported $count tracks"
+        }.getOrElse { "Export failed: ${it.message ?: "Unknown error"}" }
+    }
+
+    fun clearExchangeMessage() { _exchangeMessage.value = "" }
 
     fun createPlaylist(name: String) = viewModelScope.launch {
         if (name.isNotBlank()) dao.createPlaylist(PlaylistEntity(name = name.trim()))
@@ -126,5 +146,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _selectedPlaylistTracks.value = dao.getPlaylistTracks(playlistId)
     }
 
-    init { if (_folderUri.value != null) scanFolder() }
+    init {
+        if (_folderUri.value != null) scanFolder()
+    }
 }

@@ -47,6 +47,9 @@ data class PlaylistWithTracks(
 @Dao
 interface LibraryDao {
     @Query("SELECT * FROM tracks ORDER BY title COLLATE NOCASE")
+    suspend fun listAllTracks(): List<TrackEntity>
+
+    @Query("SELECT * FROM tracks ORDER BY title COLLATE NOCASE")
     fun observeTracks(): Flow<List<TrackEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
