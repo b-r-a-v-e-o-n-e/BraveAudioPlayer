@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -311,8 +312,8 @@ private fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, on
 private fun PlayerScreen() {
     val player = remember { PlaybackHolder.player }
     var playing by remember { mutableStateOf(player.isPlaying) }
-    var title by remember { mutableStateOf(player.currentMediaMetadata.title?.toString().orEmpty()) }
-    var artist by remember { mutableStateOf(player.currentMediaMetadata.artist?.toString().orEmpty()) }
+    var title by remember { mutableStateOf(player.mediaMetadata.title?.toString().orEmpty()) }
+    var artist by remember { mutableStateOf(player.mediaMetadata.artist?.toString().orEmpty()) }
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
 

@@ -23,7 +23,7 @@ data class PlaylistEntity(
     val createdAt: Long = System.currentTimeMillis()
 )
 
-@Entity(primaryKeys = ["playlistId", "trackUri"], tableName = "playlist_tracks")
+@Entity(primaryKeys = ["playlistId", "trackUri"], tableName = "playlist_tracks", indices = [Index(value = ["trackUri"])])
 data class PlaylistTrackCrossRef(
     val playlistId: Long,
     val trackUri: String,

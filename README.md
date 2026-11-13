@@ -75,3 +75,11 @@ Pins Compose BOM to 2025.09.01, AndroidX Core to 1.17.0, Activity to 1.11.0,
 and Lifecycle to 2.9.4, to avoid Android API 37 / AGP 9.1 requirements.
 Build configuration stays at Android API 36 and AGP 8.13.2.
 The project has not yet been verified by a successful CI build.
+
+## v1.0.5 Kotlin compilation fixes
+
+- Add missing `androidx.activity.compose.setContent` import.
+- Use ExoPlayer `mediaMetadata` property instead of unavailable `currentMediaMetadata`.
+- Add Room junction index to address kapt warning.
+
+The Android GitHub Actions build has not been verified as successful yet.
