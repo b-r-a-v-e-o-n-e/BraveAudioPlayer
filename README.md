@@ -1,7 +1,21 @@
-## ☕ Support Me
-If you find this project helpful, you can buy me a coffee!
+# Brave Audio Player
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-☕-yellow.svg)](https://buymeacoffee.com/kristodigiorgio)
+A lightweight, privacy-friendly Android audio player built with **Kotlin** and **Jetpack Compose**.
+
+![Android](https://img.shields.io/badge/Android-8.0%2B-green)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.x-purple)
+![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material3-blue)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+
+## ✨ Features
+
+- 🎵 Folder scanning & full library search (songs, albums, artists, favorites)
+- 📂 Playlists with recursive folder add and M3U import/export
+- 🎚️ 6-band equalizer with custom named presets (JSON-persisted)
+- 🌈 5 UI color schemes + Live FFT spectrum (Bars / Fine bars / Curve)
+- 🌙 Sleep timer (15–90 min) managed by the playback service
+- 🔔 Media3 MediaSessionService — lock screen, notification, headset controls
+- 🔒 No ads, no tracking, no network permissions required
 
 ## 📸 Screenshots
 
@@ -20,6 +34,11 @@ If you find this project helpful, you can buy me a coffee!
   <img src="docs/screenshots/08.jpg" width="30%" alt="Screenshot 8" />
   <img src="docs/screenshots/09.jpg" width="30%" alt="Screenshot 9" />
 </p>
+
+## ☕ Support Me
+If you find this project helpful, you can buy me a coffee!
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-☕-yellow.svg)](https://buymeacoffee.com/kristodigiorgio)
 
 ## Playlist editor v1.3.1
 
