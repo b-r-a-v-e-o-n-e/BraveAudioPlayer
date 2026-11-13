@@ -178,6 +178,8 @@ private fun BraveAudioScreen(vm: MainViewModel, palette: ThemePalette) {
     var newPlaylist by remember { mutableStateOf(false) }
     var renamePlaylist by remember { mutableStateOf<PlaylistEntity?>(null) }
     var selectedPlaylist by remember { mutableStateOf<PlaylistEntity?>(null) }
+    var pickerPlaylistId by remember { mutableStateOf<Long?>(null) }
+    var clearingPlaylist by remember { mutableStateOf<PlaylistEntity?>(null) }
     var editedTrack by remember { mutableStateOf<TrackEntity?>(null) }
     var menuTrack by remember { mutableStateOf<TrackEntity?>(null) }
 
@@ -192,6 +194,17 @@ private fun BraveAudioScreen(vm: MainViewModel, palette: ThemePalette) {
 
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(vm::selectFolder) }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::addSingle) }
+    // Capture the target at launch so a delayed picker result cannot affect another playlist.
+    val playlistFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val target = pickerPlaylistId
+        pickerPlaylistId = null
+        if (uri != null && target != null) vm.addFolderToPlaylist(target, uri)
+    }
+    val playlistFilesPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val target = pickerPlaylistId
+        pickerPlaylistId = null
+        if (target != null && uris.isNotEmpty()) vm.addFilesToPlaylist(target, uris)
+    }
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::importPlaylist) }
     val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/x-mpegurl")) { uri ->
         val target = exportingPlaylist
@@ -318,6 +331,15 @@ private fun BraveAudioScreen(vm: MainViewModel, palette: ThemePalette) {
                     onPlaylistRename = { renamePlaylist = it },
                     onPlaylistDelete = { vm.deletePlaylist(it) },
                     onPlaylistRemove = { p, t -> vm.removeFromPlaylist(p.id, t.uri) },
+                    onPlaylistAddFolder = { playlist ->
+                        pickerPlaylistId = playlist.id
+                        playlistFolderPicker.launch(null)
+                    },
+                    onPlaylistAddFiles = { playlist ->
+                        pickerPlaylistId = playlist.id
+                        playlistFilesPicker.launch(arrayOf("audio/*"))
+                    },
+                    onPlaylistClear = { clearingPlaylist = it },
                     onBack = { selectedPlaylist = null },
                     onFolder = { folderPicker.launch(null) }
                 )
@@ -365,7 +387,25 @@ private fun BraveAudioScreen(vm: MainViewModel, palette: ThemePalette) {
     }
     if (showThemeDialog) ThemeSelectionDialog(currentKey = palette.key, onSelect = { vm.setThemeKey(it) }, onDismiss = { showThemeDialog = false })
     if (showAbout) AboutDialog(onDismiss = { showAbout = false })
-    if (newPlaylist) TextEntryDialog("New playlist", "", onDismiss = { newPlaylist = false }) { vm.createPlaylist(it); newPlaylist = false }
+    if (newPlaylist) TextEntryDialog("New playlist", "", onDismiss = { newPlaylist = false }) { name ->
+        newPlaylist = false
+        vm.createPlaylist(name) { created ->
+            category = Category.PLAYLISTS
+            selectedPlaylist = created
+            vm.loadPlaylist(created.id)
+        }
+    }
+    clearingPlaylist?.let { playlist ->
+        AlertDialog(
+            onDismissRequest = { clearingPlaylist = null },
+            title = { Text("Clear playlist '${playlist.name}'?") },
+            text = { Text("Remove all songs from this playlist? This does not delete audio files or entries in your music library.") },
+            confirmButton = {
+                TextButton(onClick = { vm.clearPlaylist(playlist.id); clearingPlaylist = null }) { Text("Clear playlist") }
+            },
+            dismissButton = { TextButton(onClick = { clearingPlaylist = null }) { Text("Cancel") } }
+        )
+    }
     renamePlaylist?.let { current ->
         TextEntryDialog("Rename playlist", current.name, onDismiss = { renamePlaylist = null }) {
             vm.renamePlaylist(current, it)
@@ -451,7 +491,7 @@ private fun HomeScreen(state: PlaybackUi, vm: MainViewModel, favorites: Set<Stri
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(24.dp))
-        Box(Modifier.size(236.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(165.dp), contentAlignment = Alignment.Center) {
             Canvas(Modifier.fillMaxSize()) {
                 val w = size.width
                 drawCircle(color = palette.accent.copy(alpha = 0.10f), radius = w * .50f)
@@ -460,15 +500,15 @@ private fun HomeScreen(state: PlaybackUi, vm: MainViewModel, favorites: Set<Stri
             }
             val albumArt = rememberAlbumArt(state.uri)
             if (albumArt != null) {
-                Image(bitmap = albumArt.asImageBitmap(), contentDescription = "Album art", contentScale = ContentScale.Crop, modifier = Modifier.size(170.dp).clip(CircleShape))
+                Image(bitmap = albumArt.asImageBitmap(), contentDescription = "Album art", contentScale = ContentScale.Crop, modifier = Modifier.size(119.dp).clip(CircleShape))
             }
             IconButton(
                 onClick = {
                     if (state.title.isBlank()) onOpenLibrary() else PlaybackHolder.togglePlaybackSafely(player)
                 },
-                modifier = Modifier.size(118.dp)
+                modifier = Modifier.size(83.dp)
             ) {
-                Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play / pause", tint = palette.accent, modifier = Modifier.size(96.dp))
+                Icon(if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play / pause", tint = palette.accent, modifier = Modifier.size(67.dp))
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -483,6 +523,8 @@ private fun HomeScreen(state: PlaybackUi, vm: MainViewModel, favorites: Set<Stri
             Modifier.fillMaxWidth().shadow(9.dp, RoundedCornerShape(24.dp)).background(palette.surface, RoundedCornerShape(24.dp)).padding(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            LiveSpectrumSection(palette)
+            Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0L) }) {
                     Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", tint = palette.text, modifier = Modifier.size(32.dp))
@@ -604,6 +646,9 @@ private fun LibraryScreen(
     onPlaylistRename: (PlaylistEntity) -> Unit,
     onPlaylistDelete: (PlaylistEntity) -> Unit,
     onPlaylistRemove: (PlaylistEntity, TrackEntity) -> Unit,
+    onPlaylistAddFolder: (PlaylistEntity) -> Unit,
+    onPlaylistAddFiles: (PlaylistEntity) -> Unit,
+    onPlaylistClear: (PlaylistEntity) -> Unit,
     onBack: () -> Unit,
     onFolder: () -> Unit,
 ) {
@@ -623,9 +668,47 @@ private fun LibraryScreen(
                 Text(selectedPlaylist.name, color = palette.text, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 IconButton(onClick = { onPlaylistPlay(selectedPlaylist) }) { Icon(Icons.Default.PlayArrow, contentDescription = "Play playlist", tint = palette.accent) }
             }
-            LazyColumn(contentPadding = PaddingValues(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                items(selectedTracks, key = { it.uri }) { t ->
-                    TrackCard(t, palette = palette, favorite = t.uri in favorites, onPlay = { onSong(t, selectedTracks) }, onFavorite = { onFavorite(t.uri) }, onMenu = { onPlaylistRemove(selectedPlaylist, t) })
+            Text("${selectedTracks.size} songs", modifier = Modifier.padding(horizontal = 18.dp), color = palette.secondaryText, fontSize = 12.sp)
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = { onPlaylistAddFolder(selectedPlaylist) }) {
+                    Icon(Icons.Default.CreateNewFolder, contentDescription = null)
+                    Spacer(Modifier.width(5.dp))
+                    Text("Add folder")
+                }
+                Button(onClick = { onPlaylistAddFiles(selectedPlaylist) }) {
+                    Icon(Icons.Default.AudioFile, contentDescription = null)
+                    Spacer(Modifier.width(5.dp))
+                    Text("Add files")
+                }
+            }
+            OutlinedButton(
+                onClick = { onPlaylistClear(selectedPlaylist) },
+                enabled = selectedTracks.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            ) {
+                Icon(Icons.Default.DeleteSweep, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Clear all songs from playlist")
+            }
+            if (selectedTracks.isEmpty()) {
+                Column(
+                    Modifier.fillMaxWidth().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(Icons.Default.QueueMusic, contentDescription = null, tint = palette.accent, modifier = Modifier.size(48.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text("This playlist is empty", color = palette.text, fontWeight = FontWeight.Bold)
+                    Text("Choose Add folder or Add files above.", color = palette.secondaryText)
+                }
+            } else {
+                LazyColumn(contentPadding = PaddingValues(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    items(selectedTracks, key = { it.uri }) { t ->
+                        TrackCard(t, palette = palette, favorite = t.uri in favorites, onPlay = { onSong(t, selectedTracks) }, onFavorite = { onFavorite(t.uri) }, onMenu = { onPlaylistRemove(selectedPlaylist, t) })
+                    }
                 }
             }
             return@Column
@@ -673,6 +756,7 @@ private fun LibraryScreen(
                                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                                     DropdownMenuItem(text = { Text("Open") }, onClick = { expanded = false; onPlaylist(playlist) })
                                     DropdownMenuItem(text = { Text("Rename") }, onClick = { expanded = false; onPlaylistRename(playlist) })
+                                    DropdownMenuItem(text = { Text("Clear songs") }, onClick = { expanded = false; onPlaylistClear(playlist) })
                                     DropdownMenuItem(text = { Text("Delete") }, onClick = { expanded = false; onPlaylistDelete(playlist) })
                                 }
                             }
@@ -722,18 +806,14 @@ private fun TrackCard(track: TrackEntity, palette: ThemePalette, favorite: Boole
 
 @Composable
 private fun EqualizerScreen(palette: ThemePalette) {
-    val ctx = LocalContext.current
     val player = remember { PlaybackHolder.player }
     val eq = remember { AudioEffects.equalizer(player) }
-    val viz = remember { AudioVisualizer(player) }
     val levels by eq.levels.collectAsStateWithLifecycle()
     val store = remember(ctx) { EqPresetStore(ctx) }
     var customPresets by remember { mutableStateOf(store.list()) }
     var savePresetDialog by remember { mutableStateOf(false) }
     var deletePresetDialog by remember { mutableStateOf<String?>(null) }
-    val fft by viz.fft.collectAsStateWithLifecycle()
     var preset by remember { mutableStateOf("Custom") }
-    var spectrumMode by remember { mutableStateOf(SpectrumMode.FINE_BARS) }
     val presets = remember {
         mapOf(
             "Flat" to listOf(0f, 0f, 0f, 0f, 0f, 0f),
@@ -743,11 +823,9 @@ private fun EqualizerScreen(palette: ThemePalette) {
             "Jazz" to listOf(.2f, .12f, .0f, .1f, .18f, .16f)
         )
     }
-    val visualizerPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { if (it) viz.start() }
     DisposableEffect(player) {
         eq.attach()
-        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) viz.start()
-        onDispose { viz.stop() }
+        onDispose { }
     }
     var session by remember { mutableIntStateOf(player.audioSessionId) }
     LaunchedEffect(player) {
@@ -755,7 +833,6 @@ private fun EqualizerScreen(palette: ThemePalette) {
             if (session != player.audioSessionId) {
                 session = player.audioSessionId
                 eq.attach()
-                viz.start()
             }
             delay(900)
         }
@@ -821,26 +898,6 @@ private fun EqualizerScreen(palette: ThemePalette) {
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(
-                SpectrumMode.BARS to "Bars",
-                SpectrumMode.FINE_BARS to "Fine bars",
-                SpectrumMode.CURVE to "Curve"
-            ).forEach { (mode, label) ->
-                val selected = spectrumMode == mode
-                Box(Modifier.clip(RoundedCornerShape(13.dp)).background(if (selected) palette.positive else palette.surface).clickable { spectrumMode = mode }.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text(label, color = if (selected) palette.background else palette.text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-        Spacer(Modifier.height(19.dp))
-        Text("LIVE SPECTRUM", color = palette.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-        Spacer(Modifier.height(7.dp))
-        SpectrumCard(fft = fft, mode = spectrumMode, palette = palette)
-        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            TextButton(onClick = { visualizerPermission.launch(Manifest.permission.RECORD_AUDIO) }) { Text("Enable audio spectrum permission") }
-        }
         Spacer(Modifier.height(22.dp))
     }
     if (savePresetDialog) {
@@ -859,6 +916,61 @@ private fun EqualizerScreen(palette: ThemePalette) {
             confirmButton = { TextButton(onClick = { store.delete(selected); customPresets = store.list(); deletePresetDialog = null }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { deletePresetDialog = null }) { Text("Cancel") } }
         )
+    }
+}
+
+@Composable
+private fun LiveSpectrumSection(palette: ThemePalette) {
+    val context = LocalContext.current
+    val player = remember { PlaybackHolder.player }
+    val viz = remember(player) { AudioVisualizer(player) }
+    val fft by viz.fft.collectAsStateWithLifecycle()
+    var spectrumMode by remember { mutableStateOf(SpectrumMode.FINE_BARS) }
+    var permissionGranted by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        permissionGranted = granted
+        if (granted) viz.start()
+    }
+    DisposableEffect(viz, permissionGranted) {
+        if (permissionGranted) viz.start()
+        onDispose { viz.stop() }
+    }
+    var session by remember { mutableIntStateOf(player.audioSessionId) }
+    LaunchedEffect(player, permissionGranted) {
+        if (permissionGranted) {
+            while (true) {
+                val currentSession = player.audioSessionId
+                if (session != currentSession) {
+                    session = currentSession
+                    viz.start()
+                }
+                delay(900)
+            }
+        }
+    }
+    Text("LIVE SPECTRUM", color = palette.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+    Spacer(Modifier.height(8.dp))
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(SpectrumMode.BARS to "Bars", SpectrumMode.FINE_BARS to "Fine bars", SpectrumMode.CURVE to "Curve").forEach { (mode, label) ->
+            val selected = spectrumMode == mode
+            Box(
+                Modifier.clip(RoundedCornerShape(12.dp))
+                    .background(if (selected) palette.positive else palette.surfaceRaised)
+                    .clickable { spectrumMode = mode }
+                    .padding(horizontal = 11.dp, vertical = 7.dp)
+            ) {
+                Text(label, color = if (selected) palette.background else palette.text, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    SpectrumCard(fft = fft, mode = spectrumMode, palette = palette)
+    if (!permissionGranted) {
+        TextButton(onClick = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }) {
+            Text("Enable live spectrum")
+        }
     }
 }
 

@@ -85,6 +85,9 @@ interface LibraryDao {
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId AND trackUri = :trackUri")
     suspend fun removeFromPlaylist(playlistId: Long, trackUri: String)
 
+    @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId")
+    suspend fun clearPlaylist(playlistId: Long)
+
     @Query("SELECT t.* FROM tracks t INNER JOIN playlist_tracks p ON t.uri = p.trackUri WHERE p.playlistId = :id ORDER BY p.position")
     suspend fun getPlaylistTracks(id: Long): List<TrackEntity>
 

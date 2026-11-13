@@ -50,6 +50,62 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _selectedPlaylistTracks.value = dao.getPlaylistTracks(id)
     }
 
+    /** Remove only playlist membership, never physical files or Library entries. */
+    fun clearPlaylist(id: Long) = viewModelScope.launch {
+        dao.clearPlaylist(id)
+        _selectedPlaylistTracks.value = dao.getPlaylistTracks(id)
+    }
+
+    /** Import selected SAF folder directly into a single playlist; recursively includes nested folders. */
+    fun addFolderToPlaylist(playlistId: Long, folder: Uri) {
+        val ctx = getApplication<Application>()
+        runCatching { ctx.contentResolver.takePersistableUriPermission(folder, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        viewModelScope.launch {
+            _scanning.value = true
+            try {
+                val scanned = scanner.scanTree(folder)
+                addTracksToPlaylist(playlistId, scanned)
+            } finally { _scanning.value = false }
+        }
+    }
+
+    /** Import one or more picked audio documents directly into a playlist. */
+    fun addFilesToPlaylist(playlistId: Long, documents: List<Uri>) {
+        val ctx = getApplication<Application>()
+        documents.forEach { uri ->
+            runCatching { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        }
+        viewModelScope.launch {
+            _scanning.value = true
+            try {
+                val scanned = documents.distinct().mapNotNull { scanner.readSingle(it) }
+                addTracksToPlaylist(playlistId, scanned)
+            } finally { _scanning.value = false }
+        }
+    }
+
+    private suspend fun addTracksToPlaylist(playlistId: Long, scanned: List<TrackEntity>) {
+        if (scanned.isEmpty()) {
+            _exchangeMessage.value = "No supported audio files were found."
+            return
+        }
+        val current = dao.getPlaylistTracks(playlistId)
+        val existing = current.map { it.uri }.toMutableSet()
+        // Keep existing library metadata rather than overwriting user edits.
+        val inLibrary = dao.listAllTracks().map { it.uri }.toHashSet()
+        dao.upsertTracks(scanned.filter { it.uri !in inLibrary })
+        var position = current.size
+        var added = 0
+        scanned.forEach { track ->
+            if (existing.add(track.uri)) {
+                dao.addToPlaylist(PlaylistTrackCrossRef(playlistId, track.uri, position++))
+                added++
+            }
+        }
+        _selectedPlaylistTracks.value = dao.getPlaylistTracks(playlistId)
+        _exchangeMessage.value = "Added $added track(s) to playlist. ${scanned.size - added} already present."
+    }
+
     private val _folderUri = MutableStateFlow(prefs.getString("folderUri", null))
     val folderUri: StateFlow<String?> = _folderUri
 
@@ -130,15 +186,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearExchangeMessage() { _exchangeMessage.value = "" }
 
-    fun createPlaylist(name: String) = viewModelScope.launch {
-        if (name.isNotBlank()) dao.createPlaylist(PlaylistEntity(name = name.trim()))
+    /** The callback opens the newly created playlist immediately. */
+    fun createPlaylist(name: String, onCreated: (PlaylistEntity) -> Unit = {}) = viewModelScope.launch {
+        if (name.isNotBlank()) {
+            val entity = PlaylistEntity(name = name.trim())
+            val id = dao.createPlaylist(entity)
+            onCreated(entity.copy(id = id))
+        }
     }
 
     fun renamePlaylist(item: PlaylistEntity, name: String) = viewModelScope.launch {
         if (name.isNotBlank()) dao.updatePlaylist(item.copy(name = name.trim()))
     }
 
-    fun deletePlaylist(item: PlaylistEntity) = viewModelScope.launch { dao.deletePlaylist(item) }
+    fun deletePlaylist(item: PlaylistEntity) = viewModelScope.launch {
+        dao.clearPlaylist(item.id)
+        dao.deletePlaylist(item)
+    }
 
     fun addToPlaylist(playlistId: Long, track: TrackEntity) = viewModelScope.launch {
         val current = dao.getPlaylistTracks(playlistId)

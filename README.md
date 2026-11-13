@@ -1,3 +1,13 @@
+## Playlist editor v1.3.1
+
+- Create a playlist in **Library → Playlists → New playlist**; the new playlist opens automatically.
+- Inside a playlist: **Add folder** recursively scans a selected SAF folder and adds supported audio files to **that playlist**.
+- **Add files** uses Android's multi-document picker to add one or more audio files to **that playlist**.
+- Existing tracks are not duplicated. Selected documents and folders retain access permission when granted by the Android provider.
+- **Clear all songs from playlist** removes only playlist membership. A confirmation dialog protects against accidental clearing; audio files and the global music library are untouched.
+- The playlist's three-dot menu also contains **Clear songs**.
+- This is a source-code build; run the included GitHub Actions workflow to compile an APK.
+
 # Brave Audio Player v1.3.0
 
 Android audio player in Kotlin + Jetpack Compose, compatible with Android 8.0+ (minSdk 26), targetSdk 36.
@@ -63,3 +73,10 @@ The project archive is generated and statically checked, but **no complete Gradl
 - The six EQ UI bands map to supported platform equalizer bands, which vary by device.
 - If playback stops again, capture `adb logcat -s BraveAudio ExoPlayerImpl MediaSessionService`
   and include the Android version / device model for diagnosis.
+
+## v1.3.2 UI adjustments
+
+- Moved Live Spectrum (Bars / Fine bars / Curve) into the Player playback control panel, directly above Previous / Play-Pause / Next.
+- Reduced main circular Play button / art ring approximately 30% (236dp -> 165dp).
+- Analyzer capture starts and stops with the Player screen; optional microphone/audio-capture permission button is shown there.
+- The Equalizer screen now focuses on EQ bands and presets only.
