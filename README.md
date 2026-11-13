@@ -1,85 +1,39 @@
-# Brave Audio
+# Brave Audio — Android music player v1.1.0
 
-Modern Android audio player written in Kotlin + Jetpack Compose.
+Native Kotlin / Jetpack Compose / Media3 music player. Updated navy, cyan, white and turquoise interface based on the approved three-screen concept. The source package is ready to upload to GitHub.
 
 ## Features
 
-- Audio playback with AndroidX Media3 / ExoPlayer
-- Background playback through `MediaSessionService`
-- System media notification / lock-screen controls through Media3
-- Media library stored with Room
-- Pick a folder with Android Storage Access Framework (SAF)
-- Persistent folder access and recursive rescanning
-- Open an individual audio file from the picker or Android's “Open with” flow
-- Search by title, artist or album
-- Edit library display metadata (title, artist, album) and remove entries
-- Create, rename and delete playlists
-- Add library tracks to playlists
-- 6-band equalizer UI mapped to the closest hardware/software EQ bands available on the device
-- Real-time FFT spectrum visualization
-- Dark / light theme
-- Modern Material 3 UI
-- GitHub Actions build
+- **Now Playing** — large turquoise play ring, play/pause, previous/next, interactive seek bar, Android media volume, shuffle, repeat all/one/off, favorites, waveform decoration and embedded album cover when available.
+- **Library** — Songs, Albums, Artists, Playlists, Favorites. Search by title, artist or album, view embedded cover artwork, see track duration, play a song or an album/artist group.
+- **Playlists** — create, rename, delete, add tracks from the song menu, play a playlist, inspect it and remove tracks.
+- **Six-band equalizer** — vertical sliders at approximately 60, 170, 310, 1k, 3k and 12k Hz, Bass/Mid/Treble shortcut controls, Flat/Pop/Rock/EDM/Jazz presets, visualizer using the Android audio session.
+- **File management** — choose a folder using the Android Storage Access Framework, persist access and recursively rescan on launch or demand; open individual songs using the picker or Android Open With; edit display metadata in the database (does not rewrite audio tags).
+- **Playback** — Media3 ExoPlayer + MediaSessionService for background audio, notification/lock-screen controls where available.
+- **Appearance** — navy/turquoise dark mode and light blue/white light mode, rounded cards, coherent controls and a dedicated mini player.
+- **Audio formats** — MP3, AAC/M4A, Vorbis/OGG, Opus, FLAC, WAV, AMR and compatible device decoders/containers.
 
-## Common formats
+## Build on GitHub
 
-Media3 and Android platform decoders cover common formats such as MP3, AAC/M4A,
-OGG/Vorbis, Opus, FLAC, WAV/PCM and AMR. Actual codec/container support may vary
-slightly by Android device because some decoders are provided by the platform.
+1. Create an empty repository named `BraveAudioPlayer`.
+2. Upload **all contents** of this ZIP as files at the repository root (including the hidden `.github/workflows/android.yml`). Do not upload the ZIP as the project itself.
+3. Commit to `main`.
+4. Open **Actions > Android APK** and select the latest run, or choose **Run workflow**.
+5. Download artifact `BraveAudio-debug-apk` and extract `app-debug.apk`.
 
-## Build locally
+The workflow installs Android command-line tools, platform 36, Gradle 8.13 and JDK 17. The project uses Android Gradle Plugin 8.13.2 and the compatibility-pinned Compose BOM 2025.09.01. Minimum Android version: API 26 (Android 8.0).
 
-Requirements:
+## Technical notes / limitations
 
-- JDK 17
-- Android SDK Platform 36
-- Gradle 8.13 (or use the GitHub Action)
+- Equalizer uses Android's `Equalizer` audio effect. Its band count, actual frequencies and gain range are **device-dependent**; six interface controls are mapped to nearest available hardware/software bands. If the device exposes fewer bands, controls can affect the same physical band. The displayed ±12 scale is a UI normalization, not a guarantee of 12 dB support.
+- `RECORD_AUDIO` permission is requested only to activate Android's playback FFT analyzer. The application does not record or transmit microphone audio. On devices where a playback visualizer effect is unsupported, the spectrum will be blank.
+- Folder rescanning is automatic when the application launches and after a folder is chosen. This is not a continuous filesystem watcher; use **Rescan folder** after changing files while the app stays open. Revoked/empty folders will not wipe the stored library.
+- Playlist and favorite entries are persistent locally. Removing a track from the library does **not** delete the actual audio file.
+- The app uses real embedded album artwork where present; otherwise it shows the turquoise music icon.
+- This is a source release **not verified with a successful GitHub build in this environment**. Open the GitHub Actions log if a compile/runtime error occurs.
 
-```bash
-gradle :app:assembleDebug
-```
+## Project
 
-APK:
-
-`app/build/outputs/apk/debug/app-debug.apk`
-
-## Build in GitHub
-
-1. Create an empty GitHub repository.
-2. Upload/push the contents of this project.
-3. Open **Actions**.
-4. Run **Android APK** or push to `main`.
-5. Download the `BraveAudio-debug-apk` artifact.
-
-## Notes about permissions
-
-- `POST_NOTIFICATIONS`: Android 13+ media notification visibility.
-- `RECORD_AUDIO`: required by Android's `Visualizer` effect to capture the playback FFT.
-- `FOREGROUND_SERVICE_MEDIA_PLAYBACK`: background playback.
-- The app intentionally does **not** request broad storage access. Folder/file access is granted by the user through SAF.
-
-## Package
-
-`org.widelogic.braveaudio`
-
-Change `applicationId` and `namespace` in `app/build.gradle.kts` if needed.
-
-## v1.0.3 dependency fix
-
-Uses Activity Compose 1.12.4 and Lifecycle 2.10.0 instead of unresolved versions. Retains the v1.0.2 self-contained Android SDK GitHub Actions workflow. Build needs confirmation in GitHub Actions.
-
-
-## v1.0.4 build compatibility fix
-
-Pins Compose BOM to 2025.09.01, AndroidX Core to 1.17.0, Activity to 1.11.0,
-and Lifecycle to 2.9.4, to avoid Android API 37 / AGP 9.1 requirements.
-Build configuration stays at Android API 36 and AGP 8.13.2.
-The project has not yet been verified by a successful CI build.
-
-## v1.0.5 Kotlin compilation fixes
-
-- Add missing `androidx.activity.compose.setContent` import.
-- Use ExoPlayer `mediaMetadata` property instead of unavailable `currentMediaMetadata`.
-- Add Room junction index to address kapt warning.
-
-The Android GitHub Actions build has not been verified as successful yet.
+- Application ID: `org.widelogic.braveaudio`
+- Version name: `1.1.0`
+- Debug APK: `app/build/outputs/apk/debug/app-debug.apk`

@@ -23,6 +23,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _darkTheme = MutableStateFlow(prefs.getBoolean("dark", true))
     val darkTheme: StateFlow<Boolean> = _darkTheme
 
+    private val _favorites = MutableStateFlow(prefs.getStringSet("favorites", emptySet())?.toSet() ?: emptySet())
+    val favorites: StateFlow<Set<String>> = _favorites
+    fun toggleFavorite(uri: String) {
+        val updated = _favorites.value.toMutableSet()
+        if (!updated.add(uri)) updated.remove(uri)
+        _favorites.value = updated
+        prefs.edit().putStringSet("favorites", updated).apply()
+    }
+
+    private val _selectedPlaylistTracks = MutableStateFlow<List<TrackEntity>>(emptyList())
+    val selectedPlaylistTracks: StateFlow<List<TrackEntity>> = _selectedPlaylistTracks
+    fun loadPlaylist(id: Long) = viewModelScope.launch { _selectedPlaylistTracks.value = dao.getPlaylistTracks(id) }
+    fun removeFromPlaylist(id: Long, uri: String) = viewModelScope.launch {
+        dao.removeFromPlaylist(id, uri)
+        _selectedPlaylistTracks.value = dao.getPlaylistTracks(id)
+    }
+
     private val _folderUri = MutableStateFlow(prefs.getString("folderUri", null))
     val folderUri: StateFlow<String?> = _folderUri
 
@@ -44,11 +61,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         scanFolder()
     }
 
+    private val _scanning = MutableStateFlow(false)
+    val scanning: StateFlow<Boolean> = _scanning
+
     fun scanFolder() {
         val value = _folderUri.value ?: return
         viewModelScope.launch {
-            dao.deleteFolderTracks(value)
-            dao.upsertTracks(scanner.scanTree(Uri.parse(value)))
+            _scanning.value = true
+            try {
+                val found = scanner.scanTree(Uri.parse(value))
+                if (found.isNotEmpty()) {
+                    dao.deleteFolderTracks(value)
+                    dao.upsertTracks(found)
+                }
+            } finally { _scanning.value = false }
         }
     }
 
@@ -56,6 +82,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             scanner.readSingle(uri)?.let { dao.upsertTrack(it) }
         }
+    }
+
+    fun playPlaylist(playlistId: Long) = viewModelScope.launch {
+        val list = dao.getPlaylistTracks(playlistId)
+        if (list.isNotEmpty()) play(list.first(), list)
     }
 
     fun removeTrack(track: TrackEntity) = viewModelScope.launch { dao.deleteTrack(track.uri) }
@@ -90,7 +121,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun deletePlaylist(item: PlaylistEntity) = viewModelScope.launch { dao.deletePlaylist(item) }
 
     fun addToPlaylist(playlistId: Long, track: TrackEntity) = viewModelScope.launch {
-        val current = dao.playlistWithTracks(playlistId)?.tracks.orEmpty()
+        val current = dao.getPlaylistTracks(playlistId)
         dao.addToPlaylist(PlaylistTrackCrossRef(playlistId, track.uri, current.size))
+        _selectedPlaylistTracks.value = dao.getPlaylistTracks(playlistId)
     }
+
+    init { if (_folderUri.value != null) scanFolder() }
 }

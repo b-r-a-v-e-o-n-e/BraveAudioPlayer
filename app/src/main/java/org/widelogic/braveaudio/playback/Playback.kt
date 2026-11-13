@@ -49,14 +49,17 @@ object PlaybackHolder {
 class EqualizerController(private val player: ExoPlayer) {
     val frequencies = listOf("60 Hz", "170 Hz", "310 Hz", "1 kHz", "3 kHz", "12 kHz")
     private var eq: Equalizer? = null
+    private var connectedSession = -1
     private val _levels = MutableStateFlow(List(6) { 0f })
     val levels: StateFlow<List<Float>> = _levels
 
     fun attach() {
-        release()
         val sessionId = player.audioSessionId
+        if (eq != null && sessionId == connectedSession) return
+        release()
         if (sessionId == C.AUDIO_SESSION_ID_UNSET) return
         eq = runCatching { Equalizer(0, sessionId) }.getOrNull()?.apply { enabled = true }
+        if (eq != null) connectedSession = sessionId
         applyAll()
     }
 
@@ -91,6 +94,7 @@ class EqualizerController(private val player: ExoPlayer) {
     fun release() {
         runCatching { eq?.release() }
         eq = null
+        connectedSession = -1
     }
 }
 
@@ -130,5 +134,15 @@ class AudioVisualizer(private val player: ExoPlayer) {
         runCatching { visualizer?.release() }
         visualizer = null
         _fft.value = FloatArray(32)
+    }
+}
+
+object AudioEffects {
+    private var controller: EqualizerController? = null
+    fun equalizer(player: ExoPlayer): EqualizerController =
+        controller ?: EqualizerController(player).also { controller = it }
+    fun release() {
+        controller?.release()
+        controller = null
     }
 }

@@ -17,6 +17,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         session?.release()
         session = null
+        AudioEffects.release()
         PlaybackHolder.release()
         super.onDestroy()
     }

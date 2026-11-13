@@ -11,6 +11,7 @@
         android:name=".BraveAudioApp"
         android:allowBackup="true"
         android:label="Brave Audio"
+        android:icon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.BraveAudio">
 
