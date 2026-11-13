@@ -3,22 +3,22 @@ If you find this project helpful, you can buy me a coffee!
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-☕-yellow.svg)](https://buymeacoffee.com/kristodigiorgio)
 
-## 📸 Скрийншоти
+## 📸 Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/01.jpg" width="30%" alt="Скрийншот 1" />
-  <img src="docs/screenshots/02.jpg" width="30%" alt="Скрийншот 2" />
-  <img src="docs/screenshots/03.jpg" width="30%" alt="Скрийншот 3" />
+  <img src="docs/screenshots/01.jpg" width="30%" alt="Screenshot 1" />
+  <img src="docs/screenshots/02.jpg" width="30%" alt="Screenshot 2" />
+  <img src="docs/screenshots/03.jpg" width="30%" alt="Screenshot 3" />
 </p>
 <p align="center">
-  <img src="docs/screenshots/04.jpg" width="30%" alt="Скрийншот 4" />
-  <img src="docs/screenshots/05.jpg" width="30%" alt="Скрийншот 5" />
-  <img src="docs/screenshots/06.jpg" width="30%" alt="Скрийншот 6" />
+  <img src="docs/screenshots/04.jpg" width="30%" alt="Screenshot 4" />
+  <img src="docs/screenshots/05.jpg" width="30%" alt="Screenshot 5" />
+  <img src="docs/screenshots/06.jpg" width="30%" alt="Screenshot 6" />
 </p>
 <p align="center">
-  <img src="docs/screenshots/07.jpg" width="30%" alt="Скрийншот 7" />
-  <img src="docs/screenshots/08.jpg" width="30%" alt="Скрийншот 8" />
-  <img src="docs/screenshots/09.jpg" width="30%" alt="Скрийншот 9" />
+  <img src="docs/screenshots/07.jpg" width="30%" alt="Screenshot 7" />
+  <img src="docs/screenshots/08.jpg" width="30%" alt="Screenshot 8" />
+  <img src="docs/screenshots/09.jpg" width="30%" alt="Screenshot 9" />
 </p>
 
 ## Playlist editor v1.3.1
