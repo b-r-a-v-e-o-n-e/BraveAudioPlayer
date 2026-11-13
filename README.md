@@ -1,3 +1,7 @@
+## Version 1.1.1 — Kotlin compile fix
+
+Added the missing `androidx.compose.foundation.verticalScroll` import in `MainActivity.kt` required at lines 275 and 538. No UI or audio features were removed. Build in GitHub Actions to verify the APK.
+
 # Brave Audio — Android music player v1.1.0
 
 Native Kotlin / Jetpack Compose / Media3 music player. Updated navy, cyan, white and turquoise interface based on the approved three-screen concept. The source package is ready to upload to GitHub.
