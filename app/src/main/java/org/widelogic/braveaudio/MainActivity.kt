@@ -806,6 +806,7 @@ private fun TrackCard(track: TrackEntity, palette: ThemePalette, favorite: Boole
 
 @Composable
 private fun EqualizerScreen(palette: ThemePalette) {
+    val ctx = LocalContext.current
     val player = remember { PlaybackHolder.player }
     val eq = remember { AudioEffects.equalizer(player) }
     val levels by eq.levels.collectAsStateWithLifecycle()
