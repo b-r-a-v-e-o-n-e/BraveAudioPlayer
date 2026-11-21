@@ -58,3 +58,7 @@ Output: `app/build/outputs/apk/debug/app-debug.apk`.
 ## Validation status
 
 Source ZIP contents were checked. An actual Android Gradle compile and on-device audio tests could not be run in this environment. Confirm both build and runtime behavior through GitHub Actions and on a phone.
+
+## v1.4.1 Build fix
+
+Removed duplicate `androidx.media3.common.Player` import from `PlaybackService.kt`. Updated Android versionCode to 14 and versionName to 1.4.1. No DSP or UI modifications.
