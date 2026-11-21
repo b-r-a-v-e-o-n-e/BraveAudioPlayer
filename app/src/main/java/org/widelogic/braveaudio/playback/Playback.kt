@@ -283,7 +283,12 @@ class AudioVisualizer(private val player: ExoPlayer) {
         visualizer = runCatching {
             Visualizer(session).apply {
                 val bounds = Visualizer.getCaptureSizeRange()
-                val requested = if (quality == VisualizationQuality.LOW_REALTIME) 256 else bounds[1]
+                // 256 samples at 44.1 kHz resolve only ~172 Hz/bin: many bass bars
+                // were repeated representations of the *same* FFT sample.
+                // 1024 is still cheap to capture and resolves ~43 Hz/bin.
+                val requested = if (quality == VisualizationQuality.LOW_REALTIME) {
+                    min(bounds[1], 1024).coerceAtLeast(bounds[0])
+                } else bounds[1]
                 // Capture size must be a supported power of two.
                 captureSize = requested.coerceIn(bounds[0], bounds[1])
                 val rate = if (quality == VisualizationQuality.LOW_REALTIME) {
@@ -315,10 +320,12 @@ class AudioVisualizer(private val player: ExoPlayer) {
         runCatching { visualizer?.enabled = false }
         runCatching { visualizer?.release() }
         visualizer = null
+        val previousBandCount = currentQuality?.bandCount ?: 32
         connectedSession = -1
         currentQuality = null
-        // Preserve the last captured frame until the next start; the UI can
-        // explicitly show an idle state without producing artificial animation.
+        // Clear immediately on pause/end/stop instead of leaving a frozen high spectrum.
+        _fft.value = FloatArray(previousBandCount) { -96f }
+        _sampleRate.value = 0
     }
 }
 
@@ -344,13 +351,20 @@ object SpectrumMath {
             val rightHz = floorHz * (maxHz / floorHz).pow((i + 1f) / outputCount)
             val first = max(1, floor(leftHz * n / sampleRateHz).toInt())
             val last = min(half, ceil(rightHz * n / sampleRateHz).toInt())
-            var peak = 0f
+            // RMS magnitude within this frequency band. Using the max() of a
+            // wide band exaggerated sustained energy and held bars near the top.
+            var power = 0f
+            var measured = 0
             if (first <= last) {
-                for (k in first..last) peak = max(peak, bins[k])
+                for (k in first..last) {
+                    power += bins[k] * bins[k]
+                    measured++
+                }
             }
-            // Android's packed FFT is 8-bit with 127-scale components.
-            // dBFS is approximate and device-dependent, not a calibrated SPL meter.
-            (20f * log10(max(peak, 0.001f) / 181f)).coerceIn(-96f, 0f)
+            val rms = if (measured > 0) sqrt(power / measured) else 0f
+            // Approximate dBFS; Android Visualizer data is 8-bit and may be
+            // processed by the device. No invented/random spectrum data.
+            (20f * log10(max(rms, 0.001f) / 181f)).coerceIn(-96f, 0f)
         }
     }
 }

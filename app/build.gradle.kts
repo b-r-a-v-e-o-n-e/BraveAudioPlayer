@@ -13,8 +13,8 @@ android {
         applicationId = "org.widelogic.braveaudio"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.4.2"
+        versionCode = 16
+        versionName = "1.4.4"
     }
 
     buildFeatures {

@@ -530,9 +530,7 @@ private fun HomeScreen(state: PlaybackUi, vm: MainViewModel, favorites: Set<Stri
         Spacer(Modifier.height(7.dp))
         Text(state.title.ifBlank { "Select music to play" }, color = palette.text, fontSize = 25.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(state.artist.ifBlank { "Brave Audio" }, color = palette.secondaryText, fontSize = 15.sp)
-        Spacer(Modifier.height(15.dp))
-        HomeWaveform(accent = palette.accent, highlight = palette.positive)
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(14.dp))
         Column(
             Modifier.fillMaxWidth().shadow(9.dp, RoundedCornerShape(24.dp)).background(palette.surface, RoundedCornerShape(24.dp)).padding(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -605,19 +603,6 @@ private fun HomeScreen(state: PlaybackUi, vm: MainViewModel, favorites: Set<Stri
             }
         }
         Spacer(Modifier.height(24.dp))
-    }
-}
-
-@Composable
-private fun HomeWaveform(accent: Color, highlight: Color) {
-    Canvas(Modifier.width(280.dp).height(34.dp)) {
-        val count = 48
-        for (i in 0 until count) {
-            val h = (7 + (i * 17 % 23)).dp.toPx().coerceAtMost(size.height)
-            val x = i * (size.width / count)
-            val color = if (i % 7 == 0 || i % 7 == 1) highlight else accent
-            drawLine(color.copy(alpha = .35f + .65f * ((i % 5).toFloat() / 5f)), Offset(x, (size.height - h) / 2), Offset(x, (size.height + h) / 2), strokeWidth = 2.5.dp.toPx(), cap = StrokeCap.Round)
-        }
     }
 }
 
