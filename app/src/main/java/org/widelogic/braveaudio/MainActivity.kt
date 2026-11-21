@@ -59,6 +59,7 @@ import androidx.media3.common.Player
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.math.pow
 import kotlin.math.min
 import org.widelogic.braveaudio.data.PlaylistEntity
 import org.widelogic.braveaudio.data.TrackEntity
@@ -1030,14 +1031,14 @@ private fun SpectrumCard(fft: FloatArray, mode: SpectrumMode, palette: ThemePale
                 val path = Path()
                 dbValues.forEachIndexed { i, db ->
                     val x = i * size.width / (dbValues.size - 1).coerceAtLeast(1)
-                    val y = baseline - ((db + 96f) / 96f).coerceIn(0f, 1f) * height
+                    val y = baseline - SpectrumDisplay.heightFraction(db) * height
                     if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
                 drawPath(path, brush = spectrumBrush, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
             } else {
                 val columnWidth = size.width / count
                 dbValues.forEachIndexed { i, db ->
-                    val h = ((db + 96f) / 96f).coerceIn(0f, 1f) * height
+                    val h = SpectrumDisplay.heightFraction(db) * height
                     if (h <= 0) return@forEachIndexed
                     val x = (i + .5f) * columnWidth
                     val width = (columnWidth * if (mode == SpectrumMode.FINE_BARS) .58f else .74f).coerceAtLeast(1.dp.toPx())
@@ -1057,16 +1058,47 @@ private fun SpectrumCard(fft: FloatArray, mode: SpectrumMode, palette: ThemePale
     }
 }
 
-/** Reduce measured dB bins without interpolating fake FFT magnitudes. */
+/**
+ * The Visualizer FFT is 8-bit, device-dependent data. Its estimated dBFS is NOT
+ * calibrated, so rendering -96..0 dB as 0..100% made even -40 dB look 58% tall.
+ *
+ * Keep measured FFT magnitudes unchanged. Apply a fixed display floor / gate
+ * with a soft knee, never peak-normalize each frame (which would make silence
+ * appear as loud as music). This mapping applies equally to bars and curves.
+ */
 private object SpectrumDisplay {
+    private const val NOISE_GATE_DB = -50f
+    private const val DISPLAY_FLOOR_DB = -48f
+    private const val DISPLAY_CEILING_DB = -8f
+
+    fun heightFraction(db: Float): Float {
+        if (!db.isFinite() || db <= NOISE_GATE_DB) return 0f
+        val normalized = ((db - DISPLAY_FLOOR_DB) /
+            (DISPLAY_CEILING_DB - DISPLAY_FLOOR_DB)).coerceIn(0f, 1f)
+        // A slight power curve gives quiet passages more headroom near the floor.
+        return normalized * normalized * (1.45f - 0.45f * normalized)
+    }
+
+    /** Aggregate equal-width measured dB bins by linear-energy RMS, not max. */
     fun reduce(values: FloatArray, requested: Int): FloatArray {
-        if (values.isEmpty() || requested <= 0) return FloatArray(requested.coerceAtLeast(0)) { -96f }
+        if (values.isEmpty() || requested <= 0) {
+            return FloatArray(requested.coerceAtLeast(0)) { -96f }
+        }
         return FloatArray(requested) { band ->
-            val start = (band.toLong()*values.size/requested).toInt()
-            val end = ((band+1L)*values.size/requested).toInt().coerceAtLeast(start+1)
-            var peak=-96f
-            for (i in start until end.coerceAtMost(values.size)) peak=kotlin.math.max(peak, values[i])
-            peak.coerceIn(-96f,0f)
+            val start = (band.toLong() * values.size / requested).toInt()
+            val end = ((band + 1L) * values.size / requested).toInt()
+                .coerceAtLeast(start + 1).coerceAtMost(values.size)
+            var sumPower = 0.0
+            var count = 0
+            for (i in start until end) {
+                val value = values[i].takeIf { it.isFinite() }?.coerceIn(-96f, 0f) ?: -96f
+                // Convert dB to power before taking the mean. Averaging dB values
+                // directly would suppress narrow spectral components incorrectly.
+                sumPower += 10.0.pow(value.toDouble() / 10.0)
+                count++
+            }
+            if (count == 0 || sumPower <= 0.0) -96f
+            else (10.0 * kotlin.math.log10(sumPower / count)).toFloat().coerceIn(-96f, 0f)
         }
     }
 }
