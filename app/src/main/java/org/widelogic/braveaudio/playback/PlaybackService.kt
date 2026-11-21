@@ -4,7 +4,9 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import androidx.media3.common.Player
 import androidx.media3.session.MediaSession
+import androidx.media3.common.Player
 import androidx.media3.session.MediaSessionService
 
 /** Media3 supplies media-style playback controls for notification, headphones and lock screen.
@@ -19,6 +21,12 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         val player = PlaybackHolder.init(this)
         session = MediaSession.Builder(this, player).build()
+        AudioEffects.attach(this, player)
+        player.addListener(object : Player.Listener {
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                AudioEffects.attach(this@PlaybackService, player)
+            }
+        })
         val wallDeadline = getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_DEADLINE, 0L)
         if (wallDeadline > System.currentTimeMillis()) schedule(wallDeadline)
         else clearDeadline()

@@ -14,13 +14,24 @@ class EqPresetStore(context: Context) {
         (0 until array.length()).map { index ->
             val item = array.getJSONObject(index)
             val levels = item.getJSONArray("levels")
-            SavedEqPreset(item.getString("name"), List(6) { levels.optDouble(it, 0.0).toFloat().coerceIn(-1f, 1f) })
+            SavedEqPreset(item.getString("name"), if (levels.length() >= 10) {
+                List(10) { levels.optDouble(it, 0.0).toFloat().coerceIn(-1f,1f) }
+            } else {
+                // Legacy 6-band presets mapped onto logarithmic 10-band scale.
+                val source = List(6) { levels.optDouble(it, 0.0).toFloat().coerceIn(-1f,1f) }
+                List(10) { i ->
+                    val pos = i * 5f / 9f
+                    val a = pos.toInt().coerceIn(0,5)
+                    val b = (a+1).coerceAtMost(5)
+                    source[a]*(1f-(pos-a)) + source[b]*(pos-a)
+                }
+            })
         }
     }.getOrDefault(emptyList())
 
     fun save(name: String, levels: List<Float>) {
         val clean = name.trim().take(48)
-        if (clean.isBlank() || levels.size != 6) return
+        if (clean.isBlank() || levels.size != 10) return
         val updated = list().filterNot { it.name.equals(clean, ignoreCase = true) } + SavedEqPreset(clean, levels)
         write(updated)
     }

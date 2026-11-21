@@ -59,6 +59,7 @@ import androidx.media3.common.Player
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.math.min
 import org.widelogic.braveaudio.data.PlaylistEntity
 import org.widelogic.braveaudio.data.TrackEntity
 import org.widelogic.braveaudio.data.EqPresetStore
@@ -109,7 +110,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PlaybackHolder.init(this)
-        startService(Intent(this, PlaybackService::class.java))
         if (intent?.action == Intent.ACTION_VIEW) intent.data?.let(vm::addSingle)
         setContent {
             val themeKey by vm.themeKey.collectAsStateWithLifecycle()
@@ -140,6 +140,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Service can be stopped by Android after extended idle; reconnect on screen return.
+        startService(Intent(this, PlaybackService::class.java))
+    }
+
+    override fun onStop() {
+        PlaybackHolder.checkpoint(this)
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -810,6 +821,7 @@ private fun EqualizerScreen(palette: ThemePalette) {
     val player = remember { PlaybackHolder.player }
     val eq = remember { AudioEffects.equalizer(player) }
     val levels by eq.levels.collectAsStateWithLifecycle()
+    val eqStatus by eq.status.collectAsStateWithLifecycle()
     val store = remember(ctx) { EqPresetStore(ctx) }
     var customPresets by remember { mutableStateOf(store.list()) }
     var savePresetDialog by remember { mutableStateOf(false) }
@@ -817,11 +829,11 @@ private fun EqualizerScreen(palette: ThemePalette) {
     var preset by remember { mutableStateOf("Custom") }
     val presets = remember {
         mapOf(
-            "Flat" to listOf(0f, 0f, 0f, 0f, 0f, 0f),
-            "Pop" to listOf(.3f, .12f, -.1f, -.06f, .2f, .3f),
-            "Rock" to listOf(.48f, .25f, -.1f, .16f, .32f, .45f),
-            "EDM" to listOf(.65f, .35f, 0f, -.23f, .2f, .55f),
-            "Jazz" to listOf(.2f, .12f, .0f, .1f, .18f, .16f)
+            "Flat" to List(10) { 0f },
+            "Pop" to listOf(.18f,.26f,.12f,-.08f,-.12f,-.05f,.08f,.2f,.25f,.2f),
+            "Rock" to listOf(.4f,.5f,.25f,.0f,-.12f,.12f,.25f,.35f,.4f,.35f),
+            "EDM" to listOf(.55f,.65f,.35f,.1f,-.1f,-.2f,.05f,.25f,.45f,.5f),
+            "Jazz" to listOf(.2f,.25f,.12f,.0f,.03f,.1f,.15f,.18f,.16f,.12f)
         )
     }
     DisposableEffect(player) {
@@ -842,7 +854,7 @@ private fun EqualizerScreen(palette: ThemePalette) {
         Spacer(Modifier.height(15.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             listOf("Bass", "Mid", "Treble").forEachIndexed { index, label ->
-                val band = listOf(0, 3, 5)[index]
+                val band = listOf(1, 5, 8)[index]
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Knob(levels[band], palette = palette) { eq.setBand(band, it); preset = "Custom" }
                     Text(label, color = palette.text, fontWeight = FontWeight.SemiBold)
@@ -851,14 +863,15 @@ private fun EqualizerScreen(palette: ThemePalette) {
         }
         Spacer(Modifier.height(24.dp))
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(23.dp)).background(palette.surface).padding(15.dp)) {
-            Text("6-BAND EQUALIZER", color = palette.text, fontSize = 12.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
+            Text("10-BAND EQUALIZER", color = palette.text, fontSize = 12.sp, letterSpacing = 1.sp, fontWeight = FontWeight.Bold)
+            Text(eqStatus, color = palette.secondaryText, fontSize = 11.sp)
             Spacer(Modifier.height(18.dp))
-            Row(Modifier.fillMaxWidth().height(250.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(260.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.width(29.dp).fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
                     listOf("+12", "+6", "0", "-6", "-12").forEach { Text(it, color = palette.secondaryText, fontSize = 10.sp) }
                 }
                 eq.frequencies.forEachIndexed { index, label ->
-                    Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.width(39.dp).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(label.replace(" Hz", ""), color = palette.text, fontSize = 10.sp, maxLines = 1)
                         Spacer(Modifier.height(7.dp))
                         VerticalEqSlider(value = levels[index], positiveColor = palette.positive, negativeColor = palette.accent, modifier = Modifier.weight(1f).width(35.dp), onChange = { eq.setBand(index, it); preset = "Custom" })
@@ -926,16 +939,17 @@ private fun LiveSpectrumSection(palette: ThemePalette) {
     val player = remember { PlaybackHolder.player }
     val viz = remember(player) { AudioVisualizer(player) }
     val fft by viz.fft.collectAsStateWithLifecycle()
+    val sampleRate by viz.sampleRate.collectAsStateWithLifecycle()
     var spectrumMode by remember { mutableStateOf(SpectrumMode.FINE_BARS) }
     var permissionGranted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
     }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         permissionGranted = granted
-        if (granted) viz.start()
+        if (granted && player.isPlaying) viz.start()
     }
     DisposableEffect(viz, permissionGranted) {
-        if (permissionGranted) viz.start()
+        if (permissionGranted && player.isPlaying) viz.start()
         onDispose { viz.stop() }
     }
     var session by remember { mutableIntStateOf(player.audioSessionId) }
@@ -945,13 +959,17 @@ private fun LiveSpectrumSection(palette: ThemePalette) {
                 val currentSession = player.audioSessionId
                 if (session != currentSession) {
                     session = currentSession
+                    if (player.isPlaying) viz.start() else viz.stop()
+                } else if (player.isPlaying) {
                     viz.start()
+                } else {
+                    viz.stop()
                 }
                 delay(900)
             }
         }
     }
-    Text("LIVE SPECTRUM", color = palette.text, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+    Text("LIVE SPECTRUM • ${sampleRate} Hz • dBFS (approx.)", color = palette.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
     Spacer(Modifier.height(8.dp))
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(SpectrumMode.BARS to "Bars", SpectrumMode.FINE_BARS to "Fine bars", SpectrumMode.CURVE to "Curve").forEach { (mode, label) ->
@@ -977,88 +995,60 @@ private fun LiveSpectrumSection(palette: ThemePalette) {
 
 @Composable
 private fun SpectrumCard(fft: FloatArray, mode: SpectrumMode, palette: ThemePalette) {
-    Box(Modifier.fillMaxWidth().height(if (mode == SpectrumMode.CURVE) 170.dp else 120.dp).clip(RoundedCornerShape(18.dp)).background(palette.surface).padding(12.dp)) {
+    val count = if (mode == SpectrumMode.BARS) 32 else 96
+    val dbValues = remember(fft, count) { SpectrumDisplay.reduce(fft, count) }
+    Box(
+        Modifier.fillMaxWidth().height(if (mode == SpectrumMode.CURVE) 175.dp else 125.dp)
+            .clip(RoundedCornerShape(18.dp)).background(palette.surface).padding(12.dp)
+    ) {
         Canvas(Modifier.fillMaxSize()) {
+            val baseline = size.height - 18.dp.toPx()
+            val top = 8.dp.toPx()
+            val height = baseline - top
             if (mode == SpectrumMode.CURVE) {
-                val leftPad = 28.dp.toPx()
-                val bottomPad = 18.dp.toPx()
-                val topPad = 8.dp.toPx()
-                val chartWidth = size.width - leftPad
-                val chartHeight = size.height - bottomPad - topPad
-                val gridColor = palette.secondaryText.copy(alpha = 0.22f)
-                repeat(6) { i ->
-                    val y = topPad + chartHeight * i / 5f
-                    drawLine(gridColor, Offset(leftPad, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+                for (line in 0..4) {
+                    val y = top + height * line / 4f
+                    drawLine(palette.secondaryText.copy(alpha = .16f), Offset(0f,y), Offset(size.width,y), 1.dp.toPx())
                 }
-                repeat(10) { i ->
-                    val x = leftPad + chartWidth * i / 9f
-                    drawLine(gridColor, Offset(x, topPad), Offset(x, topPad + chartHeight), strokeWidth = if (i == 2 || i == 5 || i == 8) 1.5.dp.toPx() else 1.dp.toPx())
-                }
-                val points = interpolateValues(fft, 72)
+                // All points are real measured log-frequency FFT bins: no random data / second synthetic curve.
                 val path = Path()
-                val glowPath = Path()
-                points.forEachIndexed { i, v ->
-                    val x = leftPad + chartWidth * (i / (points.size - 1f))
-                    val db = (-110f + (v.coerceIn(0f, 1.2f) / 1.2f) * 90f)
-                    val normalized = ((db + 120f) / 100f).coerceIn(0f, 1f)
-                    val y = topPad + chartHeight * (1f - normalized)
-                    if (i == 0) {
-                        path.moveTo(x, y)
-                        glowPath.moveTo(x, y)
-                    } else {
-                        path.lineTo(x, y)
-                        glowPath.lineTo(x, y)
-                    }
+                dbValues.forEachIndexed { i, db ->
+                    val x = i * size.width / (dbValues.size - 1).coerceAtLeast(1)
+                    val y = baseline - ((db + 96f) / 96f).coerceIn(0f,1f) * height
+                    if (i == 0) path.moveTo(x,y) else path.lineTo(x,y)
                 }
-                drawPath(glowPath, color = palette.accent.copy(alpha = 0.25f), style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round))
-                drawPath(path, color = palette.accent, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
-                // accent overlay line
-                val path2 = Path()
-                points.forEachIndexed { i, v ->
-                    val x = leftPad + chartWidth * (i / (points.size - 1f))
-                    val db = (-118f + (v.coerceIn(0f, 1.2f) / 1.2f) * 82f)
-                    val normalized = ((db + 132f) / 108f).coerceIn(0f, 1f)
-                    val y = topPad + chartHeight * (1f - normalized)
-                    if (i == 0) path2.moveTo(x, y) else path2.lineTo(x, y)
-                }
-                drawPath(path2, color = palette.positive.copy(alpha = 0.9f), style = Stroke(width = 1.2.dp.toPx(), cap = StrokeCap.Round))
+                drawPath(path, palette.accent.copy(alpha=.22f), style=Stroke(5.dp.toPx(), cap=StrokeCap.Round))
+                drawPath(path, palette.positive, style=Stroke(2.dp.toPx(), cap=StrokeCap.Round))
             } else {
-                val count = if (mode == SpectrumMode.FINE_BARS) 96 else 48
-                val values = interpolateValues(fft, count)
-                val gap = size.width / count.coerceAtLeast(1)
-                val baseline = size.height * 0.86f
-                values.forEachIndexed { i, raw ->
-                    val v = raw.coerceIn(0f, 1.45f)
-                    val bar = (v / 1.45f * baseline).coerceAtLeast(2.dp.toPx())
-                    val x = i * gap + gap / 2
-                    // bottom aqua section
-                    val aquaHeight = (bar * 0.65f).coerceAtLeast(2.dp.toPx())
-                    drawLine(color = palette.accent.copy(alpha = 0.95f), start = Offset(x, baseline), end = Offset(x, baseline - aquaHeight), strokeWidth = gap * if (mode == SpectrumMode.FINE_BARS) 0.52f else 0.70f, cap = StrokeCap.Round)
-                    if (bar > aquaHeight) {
-                        drawLine(color = palette.positive.copy(alpha = 0.98f), start = Offset(x, baseline - aquaHeight), end = Offset(x, baseline - bar), strokeWidth = gap * if (mode == SpectrumMode.FINE_BARS) 0.52f else 0.70f, cap = StrokeCap.Round)
-                    }
+                val columnWidth = size.width / count
+                dbValues.forEachIndexed { i, db ->
+                    val h = ((db + 96f)/96f).coerceIn(0f,1f) * height
+                    if (h <= 0) return@forEachIndexed
+                    val x = (i+.5f)*columnWidth
+                    val width = columnWidth * if (mode == SpectrumMode.FINE_BARS) .55f else .72f
+                    val lowHeight = min(h, height*.65f)
+                    drawLine(palette.accent, Offset(x,baseline), Offset(x,baseline-lowHeight), width, cap=StrokeCap.Round)
+                    if (h > lowHeight) drawLine(palette.positive, Offset(x,baseline-lowHeight), Offset(x,baseline-h), width, cap=StrokeCap.Round)
                 }
             }
         }
-        if (mode == SpectrumMode.CURVE) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("100", color = palette.secondaryText, fontSize = 10.sp)
-                Text("1k", color = palette.secondaryText, fontSize = 10.sp)
-                Text("10k", color = palette.secondaryText, fontSize = 10.sp)
-            }
+        Row(Modifier.fillMaxWidth().align(Alignment.BottomCenter), horizontalArrangement=Arrangement.SpaceBetween) {
+            listOf("30 Hz", "300", "3k", "20k Hz").forEach { Text(it, color=palette.secondaryText, fontSize=9.sp) }
         }
     }
 }
 
-private fun interpolateValues(source: FloatArray, targetCount: Int): List<Float> {
-    if (source.isEmpty() || targetCount <= 0) return List(targetCount.coerceAtLeast(0)) { 0f }
-    if (source.size == targetCount) return source.toList()
-    return List(targetCount) { idx ->
-        val position = idx.toFloat() * (source.size - 1) / (targetCount - 1).coerceAtLeast(1)
-        val left = position.toInt().coerceIn(0, source.lastIndex)
-        val right = (left + 1).coerceIn(0, source.lastIndex)
-        val t = position - left
-        source[left] * (1f - t) + source[right] * t
+/** Reduce measured dB bins without interpolating fake FFT magnitudes. */
+private object SpectrumDisplay {
+    fun reduce(values: FloatArray, requested: Int): FloatArray {
+        if (values.isEmpty() || requested <= 0) return FloatArray(requested.coerceAtLeast(0)) { -96f }
+        return FloatArray(requested) { band ->
+            val start = (band.toLong()*values.size/requested).toInt()
+            val end = ((band+1L)*values.size/requested).toInt().coerceAtLeast(start+1)
+            var peak=-96f
+            for (i in start until end.coerceAtMost(values.size)) peak=kotlin.math.max(peak, values[i])
+            peak.coerceIn(-96f,0f)
+        }
     }
 }
 
@@ -1090,6 +1080,10 @@ private fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val prefs = remember(context) { context.getSharedPreferences(PlaybackService.PREFS, Context.MODE_PRIVATE) }
+    val gain = remember(context) { AudioEffects.gain(context, PlaybackHolder.player) }
+    val boostEnabled by gain.enabled.collectAsStateWithLifecycle()
+    val boostPercent by gain.percentage.collectAsStateWithLifecycle()
+    val boostAvailable by gain.available.collectAsStateWithLifecycle()
     var remaining by remember { mutableLongStateOf(0L) }
     LaunchedEffect(context) {
         while (true) {
@@ -1123,6 +1117,21 @@ private fun SettingsScreen(
                 }
             }
             TextButton(onClick = { updateTimer(0) }, enabled = remaining > 0) { Text("Cancel timer") }
+        }
+        Spacer(Modifier.height(5.dp))
+        Text("AUDIO GAIN", color = palette.secondaryText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(palette.surface).padding(14.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Real-time volume boost", color=palette.text, fontWeight=FontWeight.SemiBold)
+                    Text("LoudnessEnhancer • ${boostPercent}%", color=palette.secondaryText, fontSize=12.sp)
+                }
+                Switch(checked=boostEnabled, onCheckedChange={ gain.setEnabled(it) }, enabled=boostAvailable)
+            }
+            Slider(value=boostPercent.toFloat(), onValueChange={ gain.setPercentage(it.toInt()) },
+                valueRange=100f..300f, steps=7, enabled=boostEnabled && boostAvailable)
+            Text("100% = no boost. Higher settings may clip/distort; start at 125–150%.", color=palette.secondaryText, fontSize=11.sp)
+            if (!boostAvailable) Text("Audio gain effect unavailable on this device", color=palette.positive, fontSize=11.sp)
         }
         Spacer(Modifier.height(5.dp))
         Text("LIBRARY", color = palette.secondaryText, fontSize = 12.sp, fontWeight = FontWeight.Bold)

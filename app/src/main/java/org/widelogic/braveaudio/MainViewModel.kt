@@ -137,6 +137,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun addSingle(uri: Uri) {
+        // Keep SAF file accessible after process death; ACTION_VIEW providers may not allow this.
+        runCatching {
+            getApplication<Application>().contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
         viewModelScope.launch {
             scanner.readSingle(uri)?.let { dao.upsertTrack(it) }
         }

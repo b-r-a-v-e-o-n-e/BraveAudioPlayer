@@ -1,130 +1,60 @@
-# Brave Audio Player
+# Brave Audio v1.4.0 — Real Spectrum, 10-Band EQ and Playback Recovery
 
-A lightweight, privacy-friendly Android audio player built with **Kotlin** and **Jetpack Compose**.
+Complete Kotlin/Jetpack Compose Android source project. Build on GitHub Actions with the included `.github/workflows/android.yml`.
 
-![Android](https://img.shields.io/badge/Android-8.0%2B-green)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.x-purple)
-![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material3-blue)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+## Changes since v1.3.3
 
-## ✨ Features
+### Real spectrum — no synthetic frequency curves
+- Uses `android.media.audiofx.Visualizer` attached to the currently playing ExoPlayer audio session.
+- Parses actual Android packed FFT real/imaginary data in `SpectrumMath.logBands`.
+- Converts FFT bins to logarithmically spaced bands from approximately 30 Hz to 20 kHz, constrained by Nyquist frequency.
+- Bars: 32 measured groups; Fine bars: 96 measured groups; Curve: 96 measured groups connected as a response line.
+- All modes use the *same actual FFT data*. No random/mock data and no artificial secondary curve.
+- Display is approximate **dBFS**, not sound-pressure dB (SPL), and depends on the device's 8-bit Visualizer implementation. Below FFT resolution, bands share the same source bin. For example, a 1024-point FFT at 44.1 kHz cannot distinguish frequencies below ~43 Hz.
+- Visualizer is released when playback pauses or UI leaves Player, reducing native audio-effect resource pressure.
 
-- 🎵 Folder scanning & full library search (songs, albums, artists, favorites)
-- 📂 Playlists with recursive folder add and M3U import/export
-- 🎚️ 6-band equalizer with custom named presets (JSON-persisted)
-- 🌈 5 UI color schemes + Live FFT spectrum (Bars / Fine bars / Curve)
-- 🌙 Sleep timer (15–90 min) managed by the playback service
-- 🔔 Media3 MediaSessionService — lock screen, notification, headset controls
-- 🔒 No ads, no tracking, no network permissions required
+### 10-band EQ
+- Frequencies: **31, 62, 125, 250, 500, 1k, 2k, 4k, 8k, 16k Hz**.
+- Android 9+ (API 28+) attempts 10-band `DynamicsProcessing` pre-EQ with per-band +/-12 dB.
+- On devices without DynamicsProcessing, falls back to the actual native Android `Equalizer`; some devices expose fewer than 10 bands, so 10 sliders are combined into available native bands. The EQ screen shows which engine is in use.
+- Existing user saved 6-band EQ presets are migrated to 10 control values by interpolation. New presets save all 10 values.
 
-## 📸 Screenshots
+### Real-time volume boost
+- Settings → Audio Gain: enable/disable plus **100–300%** boost.
+- Uses Android `LoudnessEnhancer` attached to the ExoPlayer audio session.
+- Choice and enable state persist across restarts; 100% is unamplified.
+- Not a calibrated loudness normalizer, replay gain, or clip-proof compressor. High values can distort or clip. Start at 125–150% and reduce when needed.
+- Some devices may not implement the effect; the UI reports when unavailable.
 
-<p align="center">
-  <img src="docs/screenshots/01.jpg" width="30%" alt="Screenshot 1" />
-  <img src="docs/screenshots/02.jpg" width="30%" alt="Screenshot 2" />
-  <img src="docs/screenshots/03.jpg" width="30%" alt="Screenshot 3" />
-</p>
-<p align="center">
-  <img src="docs/screenshots/04.jpg" width="30%" alt="Screenshot 4" />
-  <img src="docs/screenshots/05.jpg" width="30%" alt="Screenshot 5" />
-  <img src="docs/screenshots/06.jpg" width="30%" alt="Screenshot 6" />
-</p>
-<p align="center">
-  <img src="docs/screenshots/07.jpg" width="30%" alt="Screenshot 7" />
-  <img src="docs/screenshots/08.jpg" width="30%" alt="Screenshot 8" />
-  <img src="docs/screenshots/09.jpg" width="30%" alt="Screenshot 9" />
-</p>
+### Resume after long pause, sleep and track end
+- Saves playback queue, active item and position in app preferences.
+- Restores the queue in a new process, with `playWhenReady = false` until user taps Play.
+- Resumes from idle/error state by preparing the player; at track end restarts from time zero.
+- Playback service is reconnected when Activity returns to foreground.
+- Attempts only one automatic retry for a playback error instead of looping endlessly.
+- SAF permission persistence for single opened tracks, where the document provider allows it.
+- Actual results after device deep sleep, process death and battery restrictions must be tested on the target Android device. Data may become inaccessible when a provider revokes permissions or a file is deleted.
 
-## ☕ Support Me
-If you find this project helpful, you can buy me a coffee!
+## Previously included features
+- Library scan and SAF folder import, playlists and direct adding of folders and audio files
+- Clear playlist without deleting files, M3U import/export, favorites
+- Now Playing, previous/next, pause/seek/shuffle/repeat, background playback via Media3
+- Sleep timer, multiple themes, personalized About page and custom launcher icon
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-☕-yellow.svg)](https://buymeacoffee.com/kristodigiorgio)
+## Build
 
-## Playlist editor v1.3.1
+1. Upload all project contents, including `.github`, to the root of your GitHub repository.
+2. Push/commit to `main` or use **Actions → Android APK → Run workflow**.
+3. Download **BraveAudio-debug-apk** from the finished workflow artifacts.
 
-- Create a playlist in **Library → Playlists → New playlist**; the new playlist opens automatically.
-- Inside a playlist: **Add folder** recursively scans a selected SAF folder and adds supported audio files to **that playlist**.
-- **Add files** uses Android's multi-document picker to add one or more audio files to **that playlist**.
-- Existing tracks are not duplicated. Selected documents and folders retain access permission when granted by the Android provider.
-- **Clear all songs from playlist** removes only playlist membership. A confirmation dialog protects against accidental clearing; audio files and the global music library are untouched.
-- The playlist's three-dot menu also contains **Clear songs**.
-- This is a source-code build; run the included GitHub Actions workflow to compile an APK.
+Or run locally with JDK 17, Android SDK 36 and Gradle 8.13:
 
-# Brave Audio Player v1.3.0
+```bash
+gradle --no-daemon :app:assembleDebug
+```
 
-Android audio player in Kotlin + Jetpack Compose, compatible with Android 8.0+ (minSdk 26), targetSdk 36.
+Output: `app/build/outputs/apk/debug/app-debug.apk`.
 
-## New in 1.3.0
+## Validation status
 
-- Separate **Settings** tab (also accessible from the menu)
-- **Sleep timer**: 15, 30, 45, 60 or 90 minutes; Cancel option; runs in `PlaybackService` instead of Activity and pauses at deadline
-- **Custom six-band EQ presets**: Save, load, replace and delete named presets, persisted as JSON in app preferences
-- **M3U playlist import/export** through Android Storage Access Framework; playlist entries matched against tracks already in the library
-- **Media3 MediaSessionService** for system media controls / lock screen / compatible headsets; title/artist provided as metadata
-- **Playback troubleshooting**: resilient Play/Pause (including idle, buffering, ended and error states), bounded retry on player errors, visible error code
-- **96 FFT values** supporting fine bars; preserves Bars/Fine bars/Curve spectrum modes
-
-## Existing features retained
-
-- Five UI color schemes including yellow `#FCBF3E` for positive EQ levels
-- Modern dark cyan/blue UI, custom launcher icon, author avatar/About
-- Folder scanning, song/library search, albums, artists, favorites and playlists
-- Media3 background playback, six-band device-compatible Android Equalizer
-- Audio formats supported by device and Media3 decoders (MP3, AAC, FLAC, OGG, OPUS, WAV, etc.)
-
-## Important compatibility notes
-
-- `.m3u` exports use SAF `content://` references. On another device, such URIs may not resolve. Import attempts to match by track filenames and titles in the existing library. Files not found are skipped; the result reports number matched.
-- Media notifications and lock-screen controls are handled by Android Media3 and may differ by device/Android version.
-- The six EQ control points map onto the available native equalizer bands of the device; they may not be independent on devices supporting fewer physical bands.
-- Spectrum capture uses Android `RECORD_AUDIO` permission for Visualizer. Graph values are relative visual levels, not calibrated sound-pressure dB.
-- Timer is owned by playback service and may be reset if Android force-stops the app; the next service start restores an unexpired deadline.
-
-## Build on GitHub
-
-Upload all project files, **including the hidden `.github` folder**, to your repository. Push to `main` or open Actions -> Android APK -> Run workflow.
-
-The workflow uses JDK 17, AGP 8.13.2, Gradle 8.13, compileSdk 36 and generates a debug APK artifact:
-
-`app/build/outputs/apk/debug/app-debug.apk`
-
-## Suggested test checklist
-
-1. Add music using folder picker; play several different tracks.
-2. Press Home, lock phone, and verify media notification/lock-screen/headset controls.
-3. Run playback for an extended period, then try pause/resume, previous/next and end of queue.
-4. Open Equalizer; save a custom preset, close/reopen app, and load it.
-5. Set a 15-minute sleep timer; verify pause and Cancel.
-6. Export a playlist as M3U, import it again, and review matched-track count.
-7. Switch themes and spectrum modes; check About author information.
-
-### Build status
-
-The project archive is generated and statically checked, but **no complete Gradle/Android SDK compilation was possible in this container**. GitHub Actions must verify compilation. If a build fails, share the first `e:`/`error:` messages from `Build APK`.
-
-## Additional notes
-
-- This is an Android source release, **not a precompiled or device-tested APK**.
-- Sleep timer is managed by the media playback service. It is not a guaranteed system alarm,
-  particularly if Android force-stops the app.
-- Exported M3U files contain original track URIs. On another phone, URI access may differ;
-  the importer also attempts filename/title matching against the currently scanned library.
-- MediaSessionService provides Android media controls; the exact notification display depends
-  on Android version and system notification settings.
-- The curve visualizer is an FFT-derived *relative* spectrum (not a calibrated dB meter).
-- The six EQ UI bands map to supported platform equalizer bands, which vary by device.
-- If playback stops again, capture `adb logcat -s BraveAudio ExoPlayerImpl MediaSessionService`
-  and include the Android version / device model for diagnosis.
-
-## v1.3.2 UI adjustments
-
-- Moved Live Spectrum (Bars / Fine bars / Curve) into the Player playback control panel, directly above Previous / Play-Pause / Next.
-- Reduced main circular Play button / art ring approximately 30% (236dp -> 165dp).
-- Analyzer capture starts and stops with the Player screen; optional microphone/audio-capture permission button is shown there.
-- The Equalizer screen now focuses on EQ bands and presets only.
-
-## v1.3.3 compile fix
-
-- Fixed missing `LocalContext.current` binding in `EqualizerScreen` after moving Live Spectrum into Player.
-- Updated version to 1.3.3.
-- No other functional changes in this patch.
+Source ZIP contents were checked. An actual Android Gradle compile and on-device audio tests could not be run in this environment. Confirm both build and runtime behavior through GitHub Actions and on a phone.
