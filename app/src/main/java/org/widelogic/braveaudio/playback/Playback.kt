@@ -229,40 +229,86 @@ class EqualizerController(private val player: ExoPlayer) {
     }
 }
 
+/** Explicit, persisted capture profiles. Low uses fewer FFT samples/bands and quicker updates.
+ * High favors frequency resolution. Neither profile synthesizes spectral content.
+ */
+enum class VisualizationQuality(val title: String, val description: String, val bandCount: Int) {
+    LOW_REALTIME("Low Realtime", "Responsive 256-point FFT • 32 bands • reduced CPU", 32),
+    HIGH_FIDELITY("High Fidelity", "High-resolution FFT • 96 bands • higher CPU", 96)
+}
+
+object VisualizationPreferences {
+    private const val FILE = "brave_visualization"
+    private const val KEY = "quality"
+    private val _quality = MutableStateFlow(VisualizationQuality.LOW_REALTIME)
+    val quality: StateFlow<VisualizationQuality> = _quality
+    private var loaded = false
+
+    fun load(context: Context) {
+        if (loaded) return
+        val stored = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getString(KEY, VisualizationQuality.LOW_REALTIME.name)
+        _quality.value = VisualizationQuality.entries.firstOrNull { it.name == stored }
+            ?: VisualizationQuality.LOW_REALTIME
+        loaded = true
+    }
+
+    fun select(context: Context, newValue: VisualizationQuality) {
+        load(context)
+        _quality.value = newValue
+        context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .edit().putString(KEY, newValue.name).apply()
+    }
+}
+
 /** FFT is captured from ExoPlayer's audio session, not simulated animation data.
- * Each output cell is a logarithmically-spaced band peak in approximate dBFS.
+ * SpectrumMath returns approximate dBFS in logarithmic frequency bands.
+ * Android Visualizer's capture rate is specified in millihertz, not hertz.
  */
 class AudioVisualizer(private val player: ExoPlayer) {
     private var visualizer: Visualizer? = null
     private var connectedSession = -1
-    private val _fft = MutableStateFlow(FloatArray(96) { -96f })
+    private var currentQuality: VisualizationQuality? = null
+    private val _fft = MutableStateFlow(FloatArray(32) { -96f })
     val fft: StateFlow<FloatArray> = _fft
     private val _sampleRate = MutableStateFlow(0)
     val sampleRate: StateFlow<Int> = _sampleRate
 
-    fun start() {
+    fun start(quality: VisualizationQuality = VisualizationQuality.LOW_REALTIME) {
         val session = player.audioSessionId
         if (session == C.AUDIO_SESSION_ID_UNSET || session <= 0) return
-        if (visualizer != null && session == connectedSession) return
+        if (visualizer != null && session == connectedSession && quality == currentQuality) return
         stop()
+        _fft.value = FloatArray(quality.bandCount) { -96f }
         visualizer = runCatching {
             Visualizer(session).apply {
                 val bounds = Visualizer.getCaptureSizeRange()
-                captureSize = bounds[1] // best available frequency resolution
+                val requested = if (quality == VisualizationQuality.LOW_REALTIME) 256 else bounds[1]
+                // Capture size must be a supported power of two.
+                captureSize = requested.coerceIn(bounds[0], bounds[1])
+                val rate = if (quality == VisualizationQuality.LOW_REALTIME) {
+                    Visualizer.getMaxCaptureRate() // strongest responsiveness
+                } else {
+                    (Visualizer.getMaxCaptureRate() * 3 / 4).coerceAtLeast(1000)
+                }
                 setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
                     override fun onWaveFormDataCapture(v: Visualizer?, waveform: ByteArray?, samplingRate: Int) = Unit
                     override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, samplingRate: Int) {
                         if (fft == null || fft.size < 8) return
-                        val sampleHz = samplingRate / 1000f  // Android returns milliHz
-                        if (sampleHz <= 0) return
+                        // No allocation for duplicate/larger bands in low-resource mode.
+                        val sampleHz = samplingRate / 1000f
+                        if (sampleHz <= 0f) return
                         _sampleRate.value = sampleHz.toInt()
-                        _fft.value = SpectrumMath.logBands(fft, sampleHz, 96)
+                        _fft.value = SpectrumMath.logBands(fft, sampleHz, quality.bandCount)
                     }
-                }, (Visualizer.getMaxCaptureRate() / 4).coerceAtLeast(1000), false, true)
+                }, rate, false, true)
                 enabled = true
             }
         }.onFailure { Log.w("BraveAudio", "Visualizer unavailable", it) }.getOrNull()
-        if (visualizer != null) connectedSession = session
+        if (visualizer != null) {
+            connectedSession = session
+            currentQuality = quality
+        }
     }
 
     fun stop() {
@@ -270,7 +316,9 @@ class AudioVisualizer(private val player: ExoPlayer) {
         runCatching { visualizer?.release() }
         visualizer = null
         connectedSession = -1
-        _fft.value = FloatArray(96) { -96f }
+        currentQuality = null
+        // Preserve the last captured frame until the next start; the UI can
+        // explicitly show an idle state without producing artificial animation.
     }
 }
 

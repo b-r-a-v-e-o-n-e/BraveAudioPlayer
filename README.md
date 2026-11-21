@@ -62,3 +62,13 @@ Source ZIP contents were checked. An actual Android Gradle compile and on-device
 ## v1.4.1 Build fix
 
 Removed duplicate `androidx.media3.common.Player` import from `PlaybackService.kt`. Updated Android versionCode to 14 and versionName to 1.4.1. No DSP or UI modifications.
+
+
+## v1.4.2 — Visualization performance and audio gain lifecycle
+
+- Settings → Visualization Performance: **Low Realtime** (default, 256-point FFT, 32 calculated bands, max supported callback rate) or **High Fidelity** (device maximum FFT length, 96 bands, 75% supported callback rate). Preference survives restarts.
+- Low mode minimizes FFT and Compose drawing workload; the exact callback frequency remains subject to the Android device and system.
+- Bars and Curve render from the same real measured FFT data. Bars use a fixed, six-stop dBFS gradient instead of an abrupt cyan/yellow cutoff.
+- PlaybackService no longer releases process-owned equalizer/gain when the service is recycled independently of the player. This prevents an avoidable loss of LoudnessEnhancer boost.
+- The app itself doesn't decrease the system STREAM_MUSIC volume when the display locks. Android audio focus ducking, another app, headset controls, and manufacturer policies can still adjust audible output independently.
+- Not compile-tested in this environment; build with the included GitHub Actions workflow.

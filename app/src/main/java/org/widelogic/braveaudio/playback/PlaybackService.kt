@@ -73,7 +73,9 @@ class PlaybackService : MediaSessionService() {
         timerTask = null
         session?.release()
         session = null
-        AudioEffects.release()
+        // Effects are process/player-scoped, just like PlaybackHolder.player.
+        // Releasing LoudnessEnhancer while keeping ExoPlayer alive caused the
+        // boost to disappear when Android recycled only MediaSessionService.
         // Do not release the process-wide player here: an Activity may still hold
         // its instance if Android recycles only the Service. The OS reclaims it
         // when the application process terminates.

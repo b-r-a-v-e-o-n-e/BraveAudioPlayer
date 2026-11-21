@@ -65,6 +65,8 @@ import org.widelogic.braveaudio.data.TrackEntity
 import org.widelogic.braveaudio.data.EqPresetStore
 import org.widelogic.braveaudio.playback.AudioEffects
 import org.widelogic.braveaudio.playback.AudioVisualizer
+import org.widelogic.braveaudio.playback.VisualizationQuality
+import org.widelogic.braveaudio.playback.VisualizationPreferences
 import org.widelogic.braveaudio.playback.PlaybackHolder
 import org.widelogic.braveaudio.playback.PlaybackService
 
@@ -109,6 +111,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        VisualizationPreferences.load(this)
         PlaybackHolder.init(this)
         if (intent?.action == Intent.ACTION_VIEW) intent.data?.let(vm::addSingle)
         setContent {
@@ -938,6 +941,7 @@ private fun LiveSpectrumSection(palette: ThemePalette) {
     val context = LocalContext.current
     val player = remember { PlaybackHolder.player }
     val viz = remember(player) { AudioVisualizer(player) }
+    val quality by VisualizationPreferences.quality.collectAsStateWithLifecycle()
     val fft by viz.fft.collectAsStateWithLifecycle()
     val sampleRate by viz.sampleRate.collectAsStateWithLifecycle()
     var spectrumMode by remember { mutableStateOf(SpectrumMode.FINE_BARS) }
@@ -946,30 +950,37 @@ private fun LiveSpectrumSection(palette: ThemePalette) {
     }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         permissionGranted = granted
-        if (granted && player.isPlaying) viz.start()
     }
-    DisposableEffect(viz, permissionGranted) {
-        if (permissionGranted && player.isPlaying) viz.start()
+    DisposableEffect(viz) {
         onDispose { viz.stop() }
     }
-    var session by remember { mutableIntStateOf(player.audioSessionId) }
-    LaunchedEffect(player, permissionGranted) {
-        if (permissionGranted) {
-            while (true) {
-                val currentSession = player.audioSessionId
-                if (session != currentSession) {
-                    session = currentSession
-                    if (player.isPlaying) viz.start() else viz.stop()
-                } else if (player.isPlaying) {
-                    viz.start()
-                } else {
-                    viz.stop()
+    // Do not destroy/recreate the native Visualizer every 900 ms on pause.
+    // Capture only when playing; resume immediately when the session/quality changes.
+    LaunchedEffect(player, viz, permissionGranted, quality) {
+        if (!permissionGranted) {
+            viz.stop()
+            return@LaunchedEffect
+        }
+        var capturing = false
+        var lastSession = -1
+        while (true) {
+            val playing = player.isPlaying
+            val session = player.audioSessionId
+            if (playing && session > 0) {
+                if (!capturing || lastSession != session) {
+                    viz.start(quality)
+                    capturing = true
+                    lastSession = session
                 }
-                delay(900)
+            } else if (capturing) {
+                viz.stop()
+                capturing = false
+                lastSession = -1
             }
+            delay(160)
         }
     }
-    Text("LIVE SPECTRUM • ${sampleRate} Hz • dBFS (approx.)", color = palette.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+    Text("LIVE SPECTRUM • ${sampleRate} Hz • ${if (quality == VisualizationQuality.LOW_REALTIME) "LOW REALTIME" else "HIGH FIDELITY"}", color = palette.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
     Spacer(Modifier.height(8.dp))
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(SpectrumMode.BARS to "Bars", SpectrumMode.FINE_BARS to "Fine bars", SpectrumMode.CURVE to "Curve").forEach { (mode, label) ->
@@ -985,7 +996,7 @@ private fun LiveSpectrumSection(palette: ThemePalette) {
         }
     }
     Spacer(Modifier.height(8.dp))
-    SpectrumCard(fft = fft, mode = spectrumMode, palette = palette)
+    SpectrumCard(fft = fft, mode = spectrumMode, palette = palette, quality = quality)
     if (!permissionGranted) {
         TextButton(onClick = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }) {
             Text("Enable live spectrum")
@@ -994,8 +1005,15 @@ private fun LiveSpectrumSection(palette: ThemePalette) {
 }
 
 @Composable
-private fun SpectrumCard(fft: FloatArray, mode: SpectrumMode, palette: ThemePalette) {
-    val count = if (mode == SpectrumMode.BARS) 32 else 96
+private fun SpectrumCard(fft: FloatArray, mode: SpectrumMode, palette: ThemePalette, quality: VisualizationQuality) {
+    // For the low-resource profile, show no more bars than captured FFT bands.
+    // Fine bars in High Fidelity show all 96 measured logarithmic bins.
+    val count = when {
+        quality == VisualizationQuality.LOW_REALTIME && mode == SpectrumMode.BARS -> 16
+        quality == VisualizationQuality.LOW_REALTIME -> 32
+        mode == SpectrumMode.BARS -> 32
+        else -> 96
+    }
     val dbValues = remember(fft, count) { SpectrumDisplay.reduce(fft, count) }
     Box(
         Modifier.fillMaxWidth().height(if (mode == SpectrumMode.CURVE) 175.dp else 125.dp)
@@ -1005,35 +1023,51 @@ private fun SpectrumCard(fft: FloatArray, mode: SpectrumMode, palette: ThemePale
             val baseline = size.height - 18.dp.toPx()
             val top = 8.dp.toPx()
             val height = baseline - top
+            // Six continuous colors by absolute dBFS level; a short bar only
+            // reaches lower hues. The color transition is never a hard edge.
+            val spectrumBrush = Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xFFFF4D93), // peak: magenta
+                    Color(0xFFFF7641), // orange
+                    Color(0xFFFCBF3E), // yellow
+                    Color(0xFF8CDC65), // lime
+                    Color(0xFF18D6C1), // turquoise
+                    Color(0xFF247BCB)  // floor: blue
+                ),
+                startY = top,
+                endY = baseline
+            )
             if (mode == SpectrumMode.CURVE) {
                 for (line in 0..4) {
                     val y = top + height * line / 4f
-                    drawLine(palette.secondaryText.copy(alpha = .16f), Offset(0f,y), Offset(size.width,y), 1.dp.toPx())
+                    drawLine(palette.secondaryText.copy(alpha = .16f), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
                 }
-                // All points are real measured log-frequency FFT bins: no random data / second synthetic curve.
                 val path = Path()
                 dbValues.forEachIndexed { i, db ->
                     val x = i * size.width / (dbValues.size - 1).coerceAtLeast(1)
-                    val y = baseline - ((db + 96f) / 96f).coerceIn(0f,1f) * height
-                    if (i == 0) path.moveTo(x,y) else path.lineTo(x,y)
+                    val y = baseline - ((db + 96f) / 96f).coerceIn(0f, 1f) * height
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
-                drawPath(path, palette.accent.copy(alpha=.22f), style=Stroke(5.dp.toPx(), cap=StrokeCap.Round))
-                drawPath(path, palette.positive, style=Stroke(2.dp.toPx(), cap=StrokeCap.Round))
+                drawPath(path, brush = spectrumBrush, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
             } else {
                 val columnWidth = size.width / count
                 dbValues.forEachIndexed { i, db ->
-                    val h = ((db + 96f)/96f).coerceIn(0f,1f) * height
+                    val h = ((db + 96f) / 96f).coerceIn(0f, 1f) * height
                     if (h <= 0) return@forEachIndexed
-                    val x = (i+.5f)*columnWidth
-                    val width = columnWidth * if (mode == SpectrumMode.FINE_BARS) .55f else .72f
-                    val lowHeight = min(h, height*.65f)
-                    drawLine(palette.accent, Offset(x,baseline), Offset(x,baseline-lowHeight), width, cap=StrokeCap.Round)
-                    if (h > lowHeight) drawLine(palette.positive, Offset(x,baseline-lowHeight), Offset(x,baseline-h), width, cap=StrokeCap.Round)
+                    val x = (i + .5f) * columnWidth
+                    val width = (columnWidth * if (mode == SpectrumMode.FINE_BARS) .58f else .74f).coerceAtLeast(1.dp.toPx())
+                    drawLine(
+                        brush = spectrumBrush,
+                        start = Offset(x, baseline),
+                        end = Offset(x, baseline - h),
+                        strokeWidth = width,
+                        cap = StrokeCap.Round
+                    )
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().align(Alignment.BottomCenter), horizontalArrangement=Arrangement.SpaceBetween) {
-            listOf("30 Hz", "300", "3k", "20k Hz").forEach { Text(it, color=palette.secondaryText, fontSize=9.sp) }
+        Row(Modifier.fillMaxWidth().align(Alignment.BottomCenter), horizontalArrangement = Arrangement.SpaceBetween) {
+            listOf("30 Hz", "300", "3k", "20k Hz").forEach { Text(it, color = palette.secondaryText, fontSize = 9.sp) }
         }
     }
 }
@@ -1106,6 +1140,26 @@ private fun SettingsScreen(
     ) {
         Text("APPEARANCE", color = palette.secondaryText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         SettingsRow("Color theme", "${palette.label} — tap to change", Icons.Default.Palette, palette, onSelectTheme)
+        Spacer(Modifier.height(5.dp))
+        Text("VISUALIZATION PERFORMANCE", color = palette.secondaryText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        val visualizationQuality by VisualizationPreferences.quality.collectAsStateWithLifecycle()
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(palette.surface).padding(14.dp)) {
+            Text("FFT analyzer quality", color = palette.text, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(5.dp))
+            VisualizationQuality.entries.forEach { option ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { VisualizationPreferences.select(context, option) }.padding(vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(selected = visualizationQuality == option, onClick = { VisualizationPreferences.select(context, option) })
+                    Column(Modifier.weight(1f).padding(start = 6.dp)) {
+                        Text(option.title, color = palette.text)
+                        Text(option.description, color = palette.secondaryText, fontSize = 11.sp)
+                    }
+                }
+            }
+            Text("Low Realtime prioritizes responsiveness and battery life; High Fidelity prioritizes frequency detail.", color = palette.secondaryText, fontSize = 11.sp)
+        }
         Spacer(Modifier.height(5.dp))
         Text("SLEEP TIMER", color = palette.secondaryText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(palette.surface).padding(15.dp)) {
